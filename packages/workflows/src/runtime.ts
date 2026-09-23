@@ -514,8 +514,13 @@ export async function modelCall<T = unknown>(
       hash: input.pack?.hash ?? `sha256:${'0'.repeat(64)}`,
       renderedSystem: rendered.system,
       renderedUser: rendered.user,
+      // Pack-less calls: ~4 characters per token for English, ~1 per 자 for Korean (ADR-0059).
       tokenEstimate:
-        input.pack?.tokenEstimate ?? Math.ceil((rendered.system.length + rendered.user.length) / 4),
+        input.pack?.tokenEstimate ??
+        Math.ceil(
+          (rendered.system.length + rendered.user.length) /
+            (ctx.identity.outputLanguage.language === 'ko' ? 1 : 4),
+        ),
     },
     narrativeIdentityRef: identityRef,
     outputSchemaRef:

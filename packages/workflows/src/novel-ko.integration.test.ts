@@ -8,6 +8,7 @@
  */
 import { afterAll, beforeAll, expect, it, describe } from 'vitest';
 import { createProject, createWorkspace, getNovelRun, PgAuditStore, type Pool } from '@yeonjae/db';
+import { loadSchemas } from '@yeonjae/domain';
 import { databaseUrl, freshDatabase } from '@yeonjae/db/testkit';
 import { Gateway, MemoryBudget, MockProvider, type ProviderRequest } from '@yeonjae/gateway';
 import { simulatedModelScript as script } from './simulated-model.js';
@@ -49,9 +50,14 @@ run('Korean novel run: intake → bible → chapters, prompts in Korean (simulat
   let workspaceId: string;
   let projectId: string;
   const seen: ProviderRequest[] = [];
+  // Words the model itself wrote. The simulated model's bible and plan content is English fixture data;
+  // when later prompts quote it back that is model content, not a rendering this system added.
+  const modelWords = new Set<string>();
   const provider = new MockProvider((req) => {
     seen.push(req);
-    return script(req);
+    const out = script(req);
+    for (const m of JSON.stringify(out).matchAll(/[A-Za-z][A-Za-z'’-]+/g)) modelWords.add(m[0]);
+    return out;
   });
 
   beforeAll(async () => {
@@ -119,5 +125,96 @@ run('Korean novel run: intake → bible → chapters, prompts in Korean (simulat
       expect(r.user).toMatch(/하드 요구사항/);
       expect(r.user).not.toMatch(/Use ONLY the entity ids above/);
     }
+
+    // KO-PROMPT-SURFACE-001: no English instruction or canon rendering reaches any Korean prompt. Every
+    // model call of the run is scanned; Latin words are allowed only as identifiers (schema keys and enum
+    // values, snake_case, provenance tags) — see `englishLeaks`.
+    const leaks = seen.flatMap((r) =>
+      englishLeaks(`${r.system}\n${r.user}`, modelWords).map(
+        (w) => `${r.trace?.role ?? '?'}: ${w}`,
+      ),
+    );
+    expect([...new Set(leaks)]).toEqual([]);
   }, 300_000);
 });
+
+/** Schema keys and enum values: identifiers a Korean prompt may carry verbatim. */
+const SCHEMA_WORDS: ReadonlySet<string> = (() => {
+  const out = new Set<string>();
+  const walk = (node: unknown): void => {
+    if (Array.isArray(node)) node.forEach(walk);
+    else if (node && typeof node === 'object')
+      for (const [k, v] of Object.entries(node)) {
+        out.add(k);
+        if (k === 'enum' && Array.isArray(v))
+          for (const e of v) if (typeof e === 'string') out.add(e);
+        if (k === 'const' && typeof v === 'string') out.add(v);
+        walk(v);
+      }
+  };
+  for (const s of loadSchemas().schemas.values()) walk(s.schema);
+  return out;
+})();
+
+/** Provenance tags, identity-block markers and model-facing ids that are identifiers by design (ADR-0055). */
+const TAGS = new Set([
+  'FACT',
+  'PLANNED',
+  'SUMMARY',
+  'EVIDENCE',
+  'UNTRUSTED',
+  'KNOWLEDGE',
+  'RELATIONSHIP',
+  'BEGIN',
+  'END',
+  'NARRATIVE',
+  'IDENTITY',
+  'TAIL',
+  'lang',
+  'ko',
+  'KR',
+  'id',
+  'ids',
+  'json',
+  'JSON',
+  'REQ',
+  'HP',
+  'MP',
+  // Extraction sweep ids the canon_extractor prompt defines.
+  'event-first',
+  'entity-first',
+]);
+
+/**
+ * Latin-script words in a Korean prompt that are neither identifiers nor model content: schema keys and
+ * enum values, JSON keys of the prompt's own shape example, quoted or dashed ids (`"leaderboard"`,
+ * `AC-LEN`), provenance tags, genre jargon Korean readers write in Latin (NTR), and words the model
+ * produced earlier in the run.
+ */
+function englishLeaks(text: string, modelWords: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  const jsonKeys = new Set([...text.matchAll(/"([A-Za-z_][A-Za-z0-9_]*)"\s*:/g)].map((m) => m[1]));
+  for (const m of text.matchAll(/[A-Za-z][A-Za-z'’-]{2,}/g)) {
+    const w = m[0].replace(/[’'-]+$/, '');
+    const at = m.index;
+    const before = text[at - 1] ?? '';
+    const after = text[at + m[0].length] ?? '';
+    if (before === '_' || after === '_' || /[0-9]/.test(before) || /[0-9]/.test(after)) continue;
+    if (before === '"' && after === '"') continue;
+    // Quoted examples of forbidden Latin words (‘OK’→‘좋아’) are the instruction, not a leak.
+    if (before === '‘' && (after === '’' || m[0].endsWith('’'))) continue;
+    // Enum alternatives ("a|b|c"), dotted identifiers (power.rank, pack.chapter_planner) and the
+    // `new:<…>` proposition-ref form are identifiers.
+    if (before === '|' || after === '|' || before === '.' || after === '.' || after === ':')
+      continue;
+    // Id fragments (`<uuid>#guard@1`).
+    if (before === '#' || after === '@') continue;
+    if (/^[A-Z]+(-[A-Z0-9]+)+$/.test(w) || w === 'NTR') continue;
+    if (TAGS.has(w) || SCHEMA_WORDS.has(w) || SCHEMA_WORDS.has(w.toLowerCase())) continue;
+    if (jsonKeys.has(w) || modelWords.has(w) || modelWords.has(m[0])) continue;
+    out.push(
+      `${w} ← “${text.slice(Math.max(0, at - 30), at + w.length + 30).replace(/\s+/g, ' ')}”`,
+    );
+  }
+  return out;
+}

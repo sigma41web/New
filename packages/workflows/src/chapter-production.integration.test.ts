@@ -165,7 +165,7 @@ run('chapter production vertical slice (Postgres + ReplayProvider)', () => {
     const check = checkOutputLanguage(toNfcText(v?.text ?? ''), { minConfidence: 0.99 });
     expect(check.passed).toBe(true);
     expect(check.english_confidence).toBe(1);
-    for (const s of result.scenes) expect(s.english_confidence).toBe(1);
+    for (const s of result.scenes) expect(s.language_confidence).toBe(1);
     const writerCalls = await pool.query<{
       output_language_check: { performed: boolean; passed: boolean };
     }>(

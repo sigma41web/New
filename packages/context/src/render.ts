@@ -216,6 +216,17 @@ const PERSON_KO: Readonly<Record<string, string>> = {
 
 const WHEN_KO: Readonly<Record<string, string>> = { early: '초반', middle: '중반', late: '후반' };
 
+/**
+ * The topic particle a Korean word takes: 은 after a final consonant (받침), 는 otherwise. A word that does
+ * not end in a Hangul syllable keeps the neutral 은(는).
+ */
+export function topicParticleKo(word: string): string {
+  const last = word.trim().slice(-1);
+  const code = last.charCodeAt(0) - 0xac00;
+  if (code < 0 || code > 11171) return '은(는)';
+  return code % 28 === 0 ? '는' : '은';
+}
+
 export function clockLabelKo(c: StoryClock | null | undefined): string {
   if (!c) return '미정';
   const world = c.world_date ? ` (${c.world_date}${c.precision === 'approx' ? ' 무렵' : ''})` : '';

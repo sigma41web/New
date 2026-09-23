@@ -46,12 +46,14 @@ import {
   clockLabel,
   clockLabelKo,
   elapsedLabel,
+  elapsedLabelKo,
   registerLabel,
   registerLabelKo,
   renderContract,
   renderContractKo,
   STANCE_KO,
   renderWithParagraphIds,
+  topicParticleKo,
   trimQuote,
   valueLabel,
   type RegisterLike,
@@ -267,10 +269,10 @@ async function fetchStates(ctx: Ctx, out: Item[]): Promise<void> {
       tier: sec.tier,
       provenance: 'canon_fact',
       source: canonSource(ctx, f.id, f.timeline_id),
-      text: risk ? `${line.full} — CONTINUITY ANCHOR` : line.full,
+      text: risk ? `${line.full}${anchorTag(ctx)}` : line.full,
       compressed: {
         method: 'table',
-        text: risk ? `${line.compact} — CONTINUITY ANCHOR` : line.compact,
+        text: risk ? `${line.compact}${anchorTag(ctx)}` : line.compact,
       },
       materiality: 'material',
       entityIds: [f.entity_id],
@@ -352,7 +354,12 @@ async function fetchKnowledge(ctx: Ctx, out: Item[]): Promise<void> {
       const statement = p ? `“${p.statement}”` : row.proposition_id;
       const src = row.source;
       const kind = typeof src.kind === 'string' ? src.kind : 'unknown';
-      const informer = typeof src.informer_id === 'string' ? ` by ${n(src.informer_id)}` : '';
+      const informer =
+        typeof src.informer_id === 'string'
+          ? ctx.lang === 'ko'
+            ? `, 알려 준 인물 ${n(src.informer_id)}`
+            : ` by ${n(src.informer_id)}`
+          : '';
       let memory = '';
       if (kind === 'prior_loop_memory' || kind === 'source_story') {
         const wanted = kind === 'prior_loop_memory' ? 'prior_loop' : 'source_story';
@@ -371,10 +378,14 @@ async function fetchKnowledge(ctx: Ctx, out: Item[]): Promise<void> {
         }
       }
       const extra = [
-        row.believed_value ? `believes: ${row.believed_value}` : undefined,
+        row.believed_value
+          ? ctx.lang === 'ko'
+            ? `잘못 믿는 내용: ${row.believed_value}`
+            : `believes: ${row.believed_value}`
+          : undefined,
         typeof (row as { certainty?: unknown }).certainty === 'number' ||
         typeof (row as { certainty?: unknown }).certainty === 'string'
-          ? `certainty ${(row as { certainty?: string }).certainty ?? ''}`
+          ? `${ctx.lang === 'ko' ? '확신도' : 'certainty'} ${(row as { certainty?: string }).certainty ?? ''}`
           : undefined,
       ].filter(Boolean);
       const text =
@@ -529,9 +540,15 @@ async function fetchPromises(ctx: Ctx, out: Item[]): Promise<void> {
 
 function eventLine(ctx: Ctx, e: EventRow): string {
   const n = nameOf(ctx);
+  const chapter = e.source_chapter_no ?? e.clock_start.chapter_no;
+  if (ctx.lang === 'ko') {
+    const whereKo = e.location_id ? `; 장소 ${n(e.location_id)}` : '';
+    const whoKo = e.participant_ids.length ? `; 등장 ${e.participant_ids.map(n).join(', ')}` : '';
+    return `${chapter}화 ${clockLabelKo(e.clock_start)} [${e.frame}] ${e.type}: ${e.summary}${whereKo}${whoKo}`;
+  }
   const where = e.location_id ? ` at ${n(e.location_id)}` : '';
   const who = e.participant_ids.length ? ` (${e.participant_ids.map(n).join(', ')})` : '';
-  return `ch.${e.source_chapter_no ?? e.clock_start.chapter_no} ${clockLabel(e.clock_start)} [${e.frame}] ${e.type}: ${e.summary}${where}${who}`;
+  return `ch.${chapter} ${clockLabel(e.clock_start)} [${e.frame}] ${e.type}: ${e.summary}${where}${who}`;
 }
 
 function eventSignals(ctx: Ctx, e: EventRow): Record<string, number> {
@@ -648,7 +665,13 @@ async function fetchWorldRules(ctx: Ctx, out: Item[]): Promise<void> {
 const str = (v: unknown, fallback = ''): string =>
   typeof v === 'string' ? v : typeof v === 'number' ? String(v) : fallback;
 
+/** A continuity-risk marker in the pack's language. */
+function anchorTag(ctx: Ctx): string {
+  return ctx.lang === 'ko' ? ' — 연속성 기준점' : ' — CONTINUITY ANCHOR';
+}
+
 function committedDeltaLine(ctx: Ctx, item: Record<string, unknown>): string | undefined {
+  if (ctx.lang === 'ko') return committedDeltaLineKo(ctx, item);
   const n = nameOf(ctx);
   const type = str(item.type);
   const op = str(item.op);
@@ -693,6 +716,62 @@ function committedDeltaLine(ctx: Ctx, item: Record<string, unknown>): string | u
       break;
     case 'alias':
       body = `alias “${str(payload.alias)}” for ${n(str(payload.entity_id))}`;
+      break;
+    default:
+      return undefined;
+  }
+  return `${type}/${op}${frameTag}${at}: ${body}`;
+}
+
+/**
+ * The Korean rendering of a committed delta item (KO-PROMPT-SURFACE-001): labels are Korean; the item
+ * type/op, frame and stance values stay schema identifiers.
+ */
+function committedDeltaLineKo(ctx: Ctx, item: Record<string, unknown>): string | undefined {
+  const n = nameOf(ctx);
+  const type = str(item.type);
+  const op = str(item.op);
+  const frame = str(item.frame, 'canonical');
+  const payload = (item.payload ?? {}) as Record<string, unknown>;
+  const clock = item.story_clock as StoryClock | undefined;
+  const at = clock ? ` @ ${clockLabelKo(clock)}` : '';
+  const frameTag = frame !== 'canonical' ? ` [${frame}]` : '';
+  const statement = (id: unknown) =>
+    typeof id === 'string' ? (ctx.propositions.get(id)?.statement ?? id) : str(id);
+  let body: string;
+  switch (type) {
+    case 'fact':
+      body = `${n(str(payload.entity_id))} · ${attributeLabel(str(payload.attribute), typeof payload.key === 'string' ? payload.key : undefined)} = ${valueLabel(payload.value, typeof payload.value_text === 'string' ? payload.value_text : undefined)}`;
+      break;
+    case 'event':
+      body = `${str(payload.type, 'event')}: ${str(payload.summary)}`;
+      break;
+    case 'knowledge_state': {
+      const knower = payload.knower as { kind?: string; entity_id?: string } | undefined;
+      const who =
+        knower?.kind === 'character' && knower.entity_id
+          ? n(knower.entity_id)
+          : (knower?.kind ?? '인물');
+      body = `${who}: ${STANCE_KO[str(payload.stance)] ?? str(payload.stance)} “${statement(payload.proposition_id)}”`;
+      break;
+    }
+    case 'relationship_state':
+      body = `${n(str(payload.from_entity_id))} → ${n(str(payload.to_entity_id))}: ${str(payload.type)}; 말높이: ${registerLabelKo(payload.register as RegisterLike | undefined)}`;
+      break;
+    case 'promise_event':
+      body = `약속 ${str(payload.promise_id)} ${str(payload.kind, op)}${typeof payload.note === 'string' ? ` — ${payload.note}` : ''}`;
+      break;
+    case 'proposition':
+      body = `명제 “${str(payload.statement)}” (${str(payload.kind)})`;
+      break;
+    case 'proposition_truth':
+      body = `“${statement(payload.proposition_id)}” — 타임라인 ${str(payload.timeline_id, 'main')}에서 ${truthKo(str(payload.value))}`;
+      break;
+    case 'entity':
+      body = `새 엔티티 ${str(payload.display_name)} (${str(payload.type)})`;
+      break;
+    case 'alias':
+      body = `별칭 “${str(payload.alias)}” → ${n(str(payload.entity_id))}`;
       break;
     default:
       return undefined;
@@ -845,7 +924,10 @@ async function fetchPreviousChapter(
           chapter_no: prevNo,
           project_id: ctx.projectId,
         },
-        text: `Committed from chapter ${prevNo} (canon v${commit.version}): ${line}`,
+        text:
+          ctx.lang === 'ko'
+            ? `${prevNo}화에서 확정 (정사 v${commit.version}): ${line}`
+            : `Committed from chapter ${prevNo} (canon v${commit.version}): ${line}`,
         materiality: 'material',
         dedupeKey: `committed:${commit.id}:${localId}`,
       });
@@ -1295,7 +1377,10 @@ export async function fetchContext(db: Queryable, opts: FetchOptions): Promise<F
           version: String(opts.spec.version),
           project_id: opts.projectId,
         },
-        text: `[${c.id}] ${c.text}${c.kind === 'assumption' && !c.confirmed ? ' (unconfirmed assumption)' : ''} {scope: ${c.scopeLabel}}`,
+        text:
+          ctx.lang === 'ko'
+            ? `[${c.id}] ${c.text}${c.kind === 'assumption' && !c.confirmed ? ' (확인되지 않은 가정)' : ''} {범위: ${c.scopeLabel}}`
+            : `[${c.id}] ${c.text}${c.kind === 'assumption' && !c.confirmed ? ' (unconfirmed assumption)' : ''} {scope: ${c.scopeLabel}}`,
         materiality: 'contextual',
       });
     }
@@ -1307,24 +1392,43 @@ export async function fetchContext(db: Queryable, opts: FetchOptions): Promise<F
   if (tlSec) {
     const others = ctx.timelines
       .filter((t) => t.id !== ctx.timeline.id)
-      .map(
-        (t) =>
-          `${t.name} (${t.kind}${t.divergence_clock ? `, diverged at ${clockLabel(t.divergence_clock)}` : ''})`,
+      .map((t) =>
+        ctx.lang === 'ko'
+          ? `${t.name} (${t.kind}${t.divergence_clock ? `, ${clockLabelKo(t.divergence_clock)}에서 갈라짐` : ''})`
+          : `${t.name} (${t.kind}${t.divergence_clock ? `, diverged at ${clockLabel(t.divergence_clock)}` : ''})`,
       );
-    const elapsed = elapsedLabel(previous?.endClock, plan.clockStart);
-    const lines = [
-      `Timeline: ${ctx.timeline.name} (${ctx.timeline.kind}). Reality frame for narration: canonical. Story clock ${clockLabel(plan.clockStart)} → ${clockLabel(plan.clockEnd)}. Canon version ${ctx.canonVersion} pinned; every FACT/KNOWLEDGE/RELATIONSHIP line below is read on this timeline as of ${clockLabel(plan.clockStart)}.`,
-      ...(plan.elapsedSincePrevious
+    const elapsed =
+      ctx.lang === 'ko'
+        ? elapsedLabelKo(previous?.endClock, plan.clockStart)
+        : elapsedLabel(previous?.endClock, plan.clockStart);
+    const lines =
+      ctx.lang === 'ko'
         ? [
-            `Elapsed since chapter ${plan.chapterNo - 1}: ${plan.elapsedSincePrevious}${elapsed ? ` (${elapsed})` : ''}.`,
+            `타임라인: ${ctx.timeline.name} (${ctx.timeline.kind}). 서술의 현실 프레임: canonical. 스토리 시계 ${clockLabelKo(plan.clockStart)} → ${clockLabelKo(plan.clockEnd)}. 정사 v${ctx.canonVersion} 고정; 아래의 FACT/KNOWLEDGE/RELATIONSHIP 줄은 모두 이 타임라인의 ${clockLabelKo(plan.clockStart)} 기준이다.`,
+            ...(plan.elapsedSincePrevious
+              ? [
+                  `${plan.chapterNo - 1}화 이후 경과: ${plan.elapsedSincePrevious}${elapsed ? ` (${elapsed})` : ''}.`,
+                ]
+              : []),
+            ...(others.length
+              ? [
+                  `이 작품의 다른 타임라인: ${others.join('; ')}. 그 사실은 이 타임라인에서 참이 아니며, 인물의 기억으로만 현재에 닿는다(KNOWLEDGE의 기억 표시 줄).`,
+                ]
+              : []),
           ]
-        : []),
-      ...(others.length
-        ? [
-            `Other timelines in this project: ${others.join('; ')}. Their facts are NOT true on this timeline; they reach the present only as a character's memory (KNOWLEDGE lines marked "remembered from").`,
-          ]
-        : []),
-    ];
+        : [
+            `Timeline: ${ctx.timeline.name} (${ctx.timeline.kind}). Reality frame for narration: canonical. Story clock ${clockLabel(plan.clockStart)} → ${clockLabel(plan.clockEnd)}. Canon version ${ctx.canonVersion} pinned; every FACT/KNOWLEDGE/RELATIONSHIP line below is read on this timeline as of ${clockLabel(plan.clockStart)}.`,
+            ...(plan.elapsedSincePrevious
+              ? [
+                  `Elapsed since chapter ${plan.chapterNo - 1}: ${plan.elapsedSincePrevious}${elapsed ? ` (${elapsed})` : ''}.`,
+                ]
+              : []),
+            ...(others.length
+              ? [
+                  `Other timelines in this project: ${others.join('; ')}. Their facts are NOT true on this timeline; they reach the present only as a character's memory (KNOWLEDGE lines marked "remembered from").`,
+                ]
+              : []),
+          ];
     items.push({
       kind: 'timeline',
       id: `timeline:${ctx.timeline.id}`,
@@ -1359,7 +1463,7 @@ export async function fetchContext(db: Queryable, opts: FetchOptions): Promise<F
           },
           text:
             opts.identity?.outputLanguage.language === 'ko'
-              ? `${n(g.characterId)}은(는) 다음을 알면 안 된다 (아는 것처럼 말하거나 행동해서도 안 된다): “${p?.statement ?? pid}”. 이 인물이 이것을 언급하게 하지 않는다.`
+              ? `${n(g.characterId)}${topicParticleKo(n(g.characterId))} 다음을 알면 안 된다 (아는 것처럼 말하거나 행동해서도 안 된다): “${p?.statement ?? pid}”. 이 인물이 이것을 언급하게 하지 않는다.`
               : `${n(g.characterId)} must NOT know (or speak/act as if knowing): “${p?.statement ?? pid}”. Do not let this character reference it.`,
           materiality: 'material',
           entityIds: [g.characterId],
@@ -1456,6 +1560,7 @@ export async function fetchContext(db: Queryable, opts: FetchOptions): Promise<F
     contract: opts.contract,
     clockStart: plan.clockStart,
     items,
+    language: ctx.lang,
     narrativeBlock,
     activeConstraintSet: {
       id: constraints.id,

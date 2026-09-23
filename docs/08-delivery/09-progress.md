@@ -3,6 +3,33 @@
 The single place that records implementation status (ADR-0043). Update it in every checkpoint commit.
 Everything else in `docs/` describes design; only this file claims what exists and what has run.
 
+## Workstream 2b — Korean token estimation and pack localization — 2026-09-23
+
+Branch `hoplite/mende-33d541c8--ws2b-korean-estimator-localization` (base `d357099`). ADR-0059 records the
+decisions; the Step 0 improvement audit (§2.4–2.6, PR #1) the findings.
+
+**Built:**
+
+- `korean_chars_v1` (one token per 자) measures Korean packs and the Korean Active Constraint Set; the
+  manifest records the estimator; English packs keep `english_estimator_v1`. Pack-less Korean calls
+  estimate one token per character instead of four characters per token.
+- Korean renderings for event lines, committed-delta lines (`N화에서 확정 (정사 vX)`), the continuity anchor,
+  knowledge extras (잘못 믿는 내용, 확신도, 알려 준 인물), the timeline section and the soft-preference suffixes.
+- Scene drafts record `characters` (자) and `language_confidence`.
+- `novel-ko.integration.test.ts` scans the system and user prompt of every model call of the Korean run
+  and fails on any Latin-script word that is not a schema identifier or provenance tag.
+
+**Measured:** Korean webnovel prose (4,091자): `o200k_base` 0.70 tokens/자, `cl100k_base` 1.08 tokens/자; the
+English estimator predicted 2.2–3.3× too few tokens. Korean end-to-end run (simulated model): writer packs
+12,105 and 14,116 of 24,000 tokens under `korean_chars_v1`, checker packs 6,003 and 7,990 of 20,000,
+extractor packs 4,945 and 5,096 of 18,000; nothing shed. The Latin-script scan found and this change fixed
+English section titles in every identity-less Korean pack (checker, extractor), the extractor's pre-pass
+note and a generic 은(는) in knowledge guards.
+
+**Not done:** the identity-block compiler still budgets with word counts (moving it would shed Korean
+exemplars at today's identity budget; it lands with Workstream 5.1); the previous-chapter tail and the
+reviser's span budget stay in 어절.
+
 ## Checkpoint K2 — Korean webnovel craft engine + live Notion run — 2026-09-23
 
 Branch `hoplite/epidamnos-dyrrhachion-8a8e00dd` (base `2e1f764`). ADR-0056 records the decisions.

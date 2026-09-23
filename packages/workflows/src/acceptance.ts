@@ -149,8 +149,12 @@ export async function extractCanon(
         family: 'canon_extractor',
         activityId: `extract:${input.contract.chapter_number}`,
         variables: {
+          // `event-first` names the extraction sweep (an identifier the prompt defines).
           sweep: 'event-first',
-          pre_pass: `${paragraphs.length} paragraphs; registry mentions resolved by the pack.`,
+          pre_pass:
+            ctx.identity.outputLanguage.language === 'ko'
+              ? `문단 ${paragraphs.length}개; 등록부 언급은 팩에서 해소됨.`
+              : `${paragraphs.length} paragraphs; registry mentions resolved by the pack.`,
         },
         pack: packCallInput(pack.stored),
       });

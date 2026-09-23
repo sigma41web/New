@@ -253,7 +253,7 @@ run(`120-chapter deterministic continuity replay (B-4-1 deterministic portion)`,
       ).toBeGreaterThanOrEqual(0.99);
       for (const s of r.scenes)
         expect(
-          s.english_confidence,
+          s.language_confidence,
           where(r.chapter_no, 'scene_draft', canon, 'gateway checked scene output language'),
         ).toBe(1);
     }

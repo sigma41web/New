@@ -33,6 +33,33 @@ export function hashObject(value: unknown): string {
 /** English token estimator (calibrated starting value 1.3 tokens/word); the manifest records its id. */
 export const TOKEN_ESTIMATOR_ID = 'english_estimator_v1';
 
+/**
+ * Korean token estimator (ADR-0059): one token per 자 — characters with spaces, without line breaks, the
+ * platform's length unit. Calibrated on 4,091자 of Korean webnovel prose: o200k_base 0.70 tokens/자,
+ * cl100k_base 1.08 tokens/자, while the English estimator undercounted the same text 2.2–3.3×.
+ */
+export const KOREAN_TOKEN_ESTIMATOR_ID = 'korean_chars_v1';
+
+export function countKoreanChars(text: string): number {
+  let n = 0;
+  for (const ch of text) if (ch !== '\n' && ch !== '\r') n++;
+  return n;
+}
+
+export function estimateTokensKo(text: string): number {
+  return countKoreanChars(text);
+}
+
+/** The estimator for a pack's language; its id is recorded in the manifest. */
+export function estimatorFor(lang: 'en' | 'ko'): {
+  readonly id: string;
+  readonly estimate: (text: string) => number;
+} {
+  return lang === 'ko'
+    ? { id: KOREAN_TOKEN_ESTIMATOR_ID, estimate: estimateTokensKo }
+    : { id: TOKEN_ESTIMATOR_ID, estimate: estimateTokens };
+}
+
 export function countWords(text: string): number {
   return text.split(/\s+/).filter(Boolean).length;
 }

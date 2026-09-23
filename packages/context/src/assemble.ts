@@ -9,11 +9,10 @@
 import { ContextError } from './errors.js';
 import {
   cmp,
-  estimateTokens,
   hashObject,
   sha256,
   stableStringify,
-  TOKEN_ESTIMATOR_ID,
+  estimatorFor,
   uuidFromHash,
   countWords,
 } from './hash.js';
@@ -135,9 +134,14 @@ function sectionSpec(t: PackTemplate, item: Item): SectionSpec {
   return spec;
 }
 
-function tokensOf(t: PackTemplate, item: Item, compressed: boolean): number {
+function tokensOf(
+  t: PackTemplate,
+  item: Item,
+  compressed: boolean,
+  lang: 'en' | 'ko' = 'en',
+): number {
   const text = compressed && item.compressed ? item.compressed.text : item.text;
-  return estimateTokens(renderItem(t, item, text));
+  return estimatorFor(lang).estimate(renderItem(t, item, text));
 }
 
 function renderSections(
@@ -176,7 +180,7 @@ function renderSections(
       tier: spec.tier,
       text,
       hash: sha256(text),
-      tokens: estimateTokens(text),
+      tokens: estimatorFor(lang).estimate(text),
       itemIds: ordered.map((c) => c.item.id),
     });
   }
@@ -199,7 +203,7 @@ export function assemblePack(input: AssemblyInput, opts: AssembleOptions = {}): 
       role: input.role,
     });
   const budget = opts.budgetTokens ?? budgetFor(template, input.policyContext);
-  const lang = input.narrativeBlock?.outputLanguage ?? 'en';
+  const lang = input.language ?? input.narrativeBlock?.outputLanguage ?? 'en';
   if (budget === undefined)
     throw new ContextError(
       'PACK_VALIDATION_FAILED',
@@ -298,7 +302,7 @@ export function assemblePack(input: AssemblyInput, opts: AssembleOptions = {}): 
   const perKindTokens = new Map<string, number>();
   let t2Budget = 0;
   const t2Ranked = orderItems(template, byTier.get('T2') ?? []);
-  const t2Total = t2Ranked.reduce((a, s) => a + tokensOf(template, s.item, false), 0);
+  const t2Total = t2Ranked.reduce((a, s) => a + tokensOf(template, s.item, false, lang), 0);
   const roomForT2 = Math.max(0, budget - totalTokens(sections));
   const t2Cap = Math.min(t2Total, roomForT2);
   for (const { item } of t2Ranked) {
@@ -313,7 +317,7 @@ export function assemblePack(input: AssemblyInput, opts: AssembleOptions = {}): 
       excluded.push({ item, reason: 'diversity_cap' });
       continue;
     }
-    const tokens = tokensOf(template, item, false);
+    const tokens = tokensOf(template, item, false, lang);
     const kindTokens = (perKindTokens.get(item.kind) ?? 0) + tokens;
     if (t2Cap > 0 && kindTokens > template.ranking.perKindShare * t2Cap && n > 0) {
       excluded.push({ item, reason: 'diversity_cap' });
@@ -330,7 +334,7 @@ export function assemblePack(input: AssemblyInput, opts: AssembleOptions = {}): 
   }
   sections = renderSections(template, chosen, lang);
   for (const { item } of orderItems(template, byTier.get('T3') ?? [])) {
-    const tokens = tokensOf(template, item, false);
+    const tokens = tokensOf(template, item, false, lang);
     if (totalTokens(sections) + tokens > budget) {
       excluded.push({ item, reason: 'budget' });
       continue;
@@ -368,9 +372,12 @@ export function assemblePack(input: AssemblyInput, opts: AssembleOptions = {}): 
         true,
         compressed ? (item.compressed?.method ?? 'degraded') : undefined,
         undefined,
+        lang,
       ),
     ),
-    ...excluded.map(({ item, reason }) => toManifestItem(template, item, false, undefined, reason)),
+    ...excluded.map(({ item, reason }) =>
+      toManifestItem(template, item, false, undefined, reason, lang),
+    ),
   ].sort((a, b) => cmp(a.id, b.id));
   const byTierTokens: Record<string, number> = {};
   for (const s of sections) byTierTokens[s.tier] = (byTierTokens[s.tier] ?? 0) + s.tokens;
@@ -416,7 +423,7 @@ export function assemblePack(input: AssemblyInput, opts: AssembleOptions = {}): 
     token_counts: {
       total,
       by_tier: byTierTokens,
-      estimator: TOKEN_ESTIMATOR_ID,
+      estimator: estimatorFor(lang).id,
       cache_prefix_hash: sha256(
         sections
           .filter((s) => s.tier === 'T0')
@@ -599,6 +606,7 @@ function toManifestItem(
   included: boolean,
   compression: Compression | undefined,
   dropReason: string | undefined,
+  lang: 'en' | 'ko' = 'en',
 ): ManifestItem {
   const text = compression && item.compressed ? item.compressed.text : item.text;
   const rendered = renderItem(t, item, text);
@@ -610,7 +618,7 @@ function toManifestItem(
     provenance: item.provenance,
     section: item.section,
     tier: item.tier,
-    tokens: estimateTokens(rendered),
+    tokens: estimatorFor(lang).estimate(rendered),
     words: countWords(rendered),
     included,
     rank_score: scoreItem(t, item),

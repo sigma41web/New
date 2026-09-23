@@ -80,6 +80,11 @@ export interface AssemblyInput {
   readonly contract: ChapterContract;
   readonly clockStart: StoryClock;
   readonly items: readonly Item[];
+  /**
+   * The project's manuscript language. Section titles and the token estimator follow it even for packs
+   * that carry no identity block (checker, extractor), so a Korean pack is Korean throughout (ADR-0059).
+   */
+  readonly language?: 'en' | 'ko' | undefined;
   readonly narrativeBlock:
     | {
         readonly text: string;

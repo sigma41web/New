@@ -109,7 +109,7 @@ run('multi-chapter continuity: chapters 1 → 2 → 3 accepted in sequence (B-6-
     expect(codePointLength(nfc.text)).toBe(EXPECTED_CH03.assembled_code_points);
     expect(nfc.text.split(/\s+/).filter(Boolean).length).toBe(EXPECTED_CH03.words);
     expect(checkOutputLanguage(nfc, { minConfidence: 0.99 }).passed).toBe(true);
-    for (const s of ch3.scenes) expect(s.english_confidence).toBe(1);
+    for (const s of ch3.scenes) expect(s.language_confidence).toBe(1);
   });
 
   it("chapter 3's pack carried chapter 2's accepted summary, hook and verbatim tail — not chapter 1's", async () => {
@@ -204,7 +204,7 @@ run('multi-chapter continuity: chapters 1 → 2 → 3 accepted in sequence (B-6-
     expect(nfc.text.split(/\s+/).filter(Boolean).length).toBe(EXPECTED_CH02.words);
     const check = checkOutputLanguage(nfc, { minConfidence: 0.99 });
     expect(check.passed).toBe(true);
-    for (const s of ch2.scenes) expect(s.english_confidence).toBe(1);
+    for (const s of ch2.scenes) expect(s.language_confidence).toBe(1);
   });
 
   it('chapter 2 was accepted without a revision round, so the chain does not depend on the repair path', () => {

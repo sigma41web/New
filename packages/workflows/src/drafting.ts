@@ -12,7 +12,7 @@ import {
   type ManuscriptVersionRow,
 } from '@yeonjae/db';
 import { asUuid, type Generated, validatorFor } from '@yeonjae/domain';
-import { codePointLength, segmentParagraphs, toNfcText } from '@yeonjae/prose';
+import { codePointLength, measure, segmentParagraphs, toNfcText } from '@yeonjae/prose';
 import { WorkflowError } from './errors.js';
 import { normalizeScenePlans } from './plan-normalize.js';
 import { normalizeSceneDraft } from './anchoring.js';
@@ -287,6 +287,14 @@ export interface SceneDraftRef {
   readonly content_hash: string;
   readonly llm_call_id: string;
   readonly words: number;
+  /**
+   * 자: characters with spaces, without line breaks — the Korean platform unit (ADR-0059). Absent on
+   * checkpoints written before ADR-0059.
+   */
+  readonly characters?: number;
+  /** The manuscript-language check's confidence, whatever the language. */
+  readonly language_confidence: number | undefined;
+  /** @deprecated Kept for checkpoints written before ADR-0059; read `language_confidence`. */
   readonly english_confidence: number | undefined;
 }
 
@@ -357,6 +365,10 @@ export async function draftScenes(
           content_hash: ref.content_hash,
           llm_call_id: call.llmCallId,
           words: toNfcText(draft.text).text.split(/\s+/).filter(Boolean).length,
+          characters: measure(toNfcText(draft.text)).characters,
+          language_confidence: call.outputLanguageCheck?.performed
+            ? call.outputLanguageCheck.englishConfidence
+            : undefined,
           english_confidence: call.outputLanguageCheck?.performed
             ? call.outputLanguageCheck.englishConfidence
             : undefined,

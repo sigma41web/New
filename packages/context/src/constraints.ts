@@ -6,7 +6,7 @@
  * (T0); the cap applies to the whole set and exceeding it is `CONSTRAINTS_OVERFLOW`, never silent trimming.
  */
 import { ContextError } from './errors.js';
-import { cmp, estimateTokens, sha256, uuidFromHash } from './hash.js';
+import { cmp, estimatorFor, sha256, uuidFromHash } from './hash.js';
 import { type Requirement, type StorySpec } from './types.js';
 
 export interface ConstraintScope {
@@ -369,7 +369,7 @@ export function compileActiveConstraintSet(
       : []),
   ];
   const renderedText = parts.join('\n\n');
-  const tokenCount = estimateTokens(renderedText);
+  const tokenCount = estimatorFor(lang).estimate(renderedText);
   const contentHash = sha256(renderedText);
   if (tokenCount > opts.capTokens) {
     throw new ContextError(
