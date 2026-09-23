@@ -40,6 +40,13 @@ draft/version text (English)
 | C `genre_score` | Genre Judge 0.8 · terminology/device compliance 0.2 | 65 / 72 / 80 |
 | D `voice_score` | Voice Judge 0.7 · Register check 0.3 | 70 / 76 / 82 |
 
+The composition applies when the pinned policy's `evaluation.score_model` is `rubric_subscores`
+(ADR-0060): the judge term is the mean of its 1–5 rubric sub-scores over the keys its output shape asks for,
+mapped to 0–100 (a missing key counts as 1); the lint composites take the policy's
+`evaluation.lint_penalty_points` per deterministic finding off 100; terminology compliance and the dialogue
+register check are shares. Under `judge_score` (and under a policy without an `evaluation` block) the gate
+reads the judge's own 0–100 number.
+
 The numbers live in `examples/production-policies/*.v1.json`; this table quotes them. **Every gated
 dimension must pass on its own**; there is no averaged "style score" and `scorecard.overall.score` is never
 a gate input. Any `blocking` violation (`EP-LANG-01` non-English prose, `EP-FMT-01` screenplay/script,
@@ -78,6 +85,13 @@ After applying patches to create version v+1:
    (starting value 3) and no
    new blocking/major issue; otherwise revert the offending patch and try an alternate repair once, then
    escalate.
+
+Under the pinned policy's `evaluation.reevaluation: targeted` (ADR-0060) the model evaluators follow the same
+rule: the targeted dimension's evaluator always re-runs; continuity and knowledge re-run when the patch
+declared changed claims or rewrote a scene; the contract checker re-runs when claims changed or a criterion
+was failing; any other evaluator re-runs when one of its findings no longer anchors in the patched text;
+after `policy.revision.smoke_after_patches` patches every evaluator re-runs. Carried sections record
+`carried_from`, and step 6 still compares full scorecards.
 
 ## 5. Escalation & human review
 

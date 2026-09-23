@@ -20,12 +20,16 @@ import {
 } from '@yeonjae/domain';
 import { exemplarsOf } from '@yeonjae/narrative';
 import {
+  checkDialogueRegister,
   checkOutputLanguage,
   compileModelPattern,
+  dialogueRegisterDigestKo,
   judgeLength,
   koStyleDigest,
   lintKoreanWebnovel,
   measure,
+  repetitionDigestKo,
+  repetitionReport,
   segmentParagraphs,
   targetCount,
   toNfcText,
@@ -34,14 +38,36 @@ import {
   type KoStyleReport,
 } from '@yeonjae/prose';
 import { WorkflowError } from './errors.js';
-import { checkpointPack, packCallInput } from './drafting.js';
+import { checkpointPack, packCallInput, packSections } from './drafting.js';
+import {
+  composeDimensionScore,
+  CORE_EVALUATORS,
+  EVALUATOR_DIMENSION,
+  lintComposite,
+  planReevaluation,
+  reanchorIssues,
+  rubricScore,
+  runBounded,
+  type EvaluationCarry,
+  type EvaluatorName,
+  type GatedDimension,
+} from './evaluation-plan.js';
+import {
+  addressMatrix,
+  chapterObligations,
+  priorAcceptedChapters,
+  priorChapterEdges,
+  readerSecrets,
+  terminologyChecks,
+  voiceCards,
+} from './evaluator-inputs.js';
 import {
   anchorIssueQuote,
   normalizeDimensionScores,
   normalizeDriftFlags,
   normalizeRepair,
 } from './judge-normalize.js';
-import { type ChapterContract, type StorySpec, compileFor } from './planning.js';
+import { type ChapterContract, type StoryBible, type StorySpec, compileFor } from './planning.js';
 import { modelCall, runStep, saveArtifact, type WorkflowContext } from './runtime.js';
 
 export type Scorecard = Generated.ScorecardSchema.Scorecard;
@@ -406,13 +432,46 @@ interface JudgeOutput {
   ending_type_detected?: string;
 }
 
+interface ContractOutput {
+  criteria?: {
+    criterion_id: string;
+    passed: boolean;
+    evidence_paragraph_ids?: string[];
+    note?: string;
+  }[];
+}
+
+interface PromiseOutput {
+  touches?: { promise_id?: unknown; planned?: unknown; found?: unknown; quote?: unknown }[];
+}
+
+type EvaluatorOutput = JudgeOutput & ContractOutput & PromiseOutput;
+
 export interface EvaluationResult {
   readonly scorecard: Scorecard;
   readonly scorecardArtifactId: string;
   readonly blocking: readonly Issue[];
   readonly approvable: boolean;
   readonly packs: { checker: string; checker_hash: string };
+  /**
+   * ADR-0060, under a policy with an evaluation block: `targeted` when some evaluators' findings were
+   * carried from the parent version, and which evaluators ran. Absent otherwise (every evaluator ran).
+   */
+  readonly mode?: 'full' | 'targeted' | undefined;
+  readonly rerun?: readonly EvaluatorName[] | undefined;
 }
+
+const SOURCE: Readonly<Record<EvaluatorName, string>> = {
+  contract_checker: 'judge:contract_checker',
+  continuity_checker: 'judge:continuity_checker',
+  knowledge_leak_checker: 'judge:knowledge_leak_checker',
+  prose_judge: 'judge:prose_judge',
+  structure_judge: 'judge:structure_judge',
+  genre_judge: 'judge:genre_judge',
+  voice_judge: 'judge:voice_judge',
+  promise_checker: 'judge:promise_checker',
+  repetition_judge: 'judge:repetition_judge',
+};
 
 /** Evaluate one manuscript version (idempotent per version). */
 export async function evaluateVersion(
@@ -424,6 +483,10 @@ export async function evaluateVersion(
     canonVersion: number;
     allowlist: readonly string[];
     round: number;
+    /** Voice cards, address terms, reader secrets and promise statements (ADR-0060). */
+    bible?: StoryBible | undefined;
+    /** The parent version's evaluation, for a targeted re-evaluation after a patch (ADR-0060). */
+    carry?: EvaluationCarry | undefined;
   },
 ): Promise<EvaluationResult> {
   const v = input.version;
@@ -438,6 +501,12 @@ export async function evaluateVersion(
       const chapterText = paragraphs.map((p) => `[${p.id}] ${p.text}`).join('\n\n');
       const evaluatorCalls: string[] = [];
       const issues: Issue[] = [...det.issues];
+      const lang: 'en' | 'ko' = ctx.identity.outputLanguage.language === 'ko' ? 'ko' : 'en';
+      const ko = lang === 'ko';
+      const none = ko ? '(없음)' : '(none)';
+      const orNone = (s: string | undefined) => (s?.trim() ? s : none);
+      // ADR-0060: a policy without an evaluation block keeps the ADR-0056 behaviour exactly.
+      const policyEval = ctx.policy.evaluation;
 
       // Checker pack: the working version enters only as job-scoped chapter_text (status recorded in the manifest).
       const checker = await checkpointPack(ctx, {
@@ -449,28 +518,271 @@ export async function evaluateVersion(
         lexical: false,
       });
       const packIn = packCallInput(checker.stored);
+      const packVars = checker.stored.variables;
+      const packSection = (names: readonly string[]) => packSections(checker.stored, names);
       const act = (name: string) => `${name}:${input.contract.chapter_number}:r${input.round}`;
 
-      const contractCall = await modelCall<{
-        criteria?: {
-          criterion_id: string;
-          passed: boolean;
-          evidence_paragraph_ids?: string[];
-          note?: string;
-        }[];
-      }>(ctx, {
-        step: 'evaluate',
-        family: 'contract_checker',
-        activityId: act('contract_check'),
-        variables: {
-          chapter_text: chapterText,
-          chapter_contract:
-            checker.stored.variables.chapter_contract ?? JSON.stringify(input.contract),
-        },
-        pack: packIn,
+      const optional = policyEval?.optional_evaluators ?? [];
+      for (const name of optional)
+        if (!ctx.promptSet.mapping[name])
+          throw new WorkflowError(
+            'EVALUATION_FAILED',
+            `policy ${ctx.pins.productionPolicyVersion} runs ${name}, but the pinned prompt set ${ctx.promptSet.id} has no ${name}`,
+            { step: 'evaluate' },
+          );
+      const evaluators: EvaluatorName[] = [...CORE_EVALUATORS, ...optional];
+
+      // ---- targeted re-evaluation: carried findings must still anchor in the patched text.
+      const carry = policyEval?.reevaluation === 'targeted' ? input.carry : undefined;
+      const carriedSpans = new Map<EvaluatorName, Issue['chapter_span'][]>();
+      const unanchored = new Set<EvaluatorName>();
+      if (carry) {
+        const before = { paragraphs: segmentParagraphs(toNfcText(carry.versionText)) };
+        for (const e of evaluators) {
+          const prior = carry.scorecard.issues.filter((i) => i.source === SOURCE[e]);
+          const spans = reanchorIssues(prior, before, anchor);
+          if (spans) carriedSpans.set(e, spans);
+          else unanchored.add(e);
+        }
+      }
+      const plan = planReevaluation({
+        evaluators,
+        reevaluation: policyEval?.reevaluation ?? 'full',
+        carry,
+        smokeAfterPatches: ctx.policy.revision.smoke_after_patches,
+        unanchored,
       });
-      evaluatorCalls.push(contractCall.llmCallId);
-      const criteria = contractCall.output.criteria ?? [];
+      const runs = new Set(plan.rerun);
+
+      // ---- inputs: older pinned prompt versions keep receiving exactly what they received.
+      const versionOf = (family: EvaluatorName) => {
+        const id = ctx.promptSet.mapping[family];
+        return id ? ctx.registry.get(id) : undefined;
+      };
+      const voicePv = versionOf('voice_judge');
+      const voiceV2 = voicePv?.input_variables.includes('voice_cards') ?? false;
+      const register = ko && voiceV2 ? checkDialogueRegister(nfc) : undefined;
+      const primaryGenre = input.spec.items.find((i) => i.category === 'genre')?.text;
+      const terminology =
+        versionOf('genre_judge')?.input_variables.includes('terminology_checks') === true
+          ? terminologyChecks({
+              text: nfc,
+              paragraphs,
+              allowlist: input.allowlist,
+              identity: ctx.identity,
+              primaryGenre,
+              lang,
+            })
+          : undefined;
+      const repetitionEvidence = runs.has('repetition_judge')
+        ? await (async () => {
+            const prior = await priorAcceptedChapters(
+              ctx.pool,
+              ctx.projectId,
+              input.contract.chapter_number,
+            );
+            return { prior, report: repetitionReport(nfc, prior) };
+          })()
+        : undefined;
+
+      const call = (e: EvaluatorName): Promise<{ llmCallId: string; output: EvaluatorOutput }> => {
+        switch (e) {
+          case 'contract_checker':
+            return modelCall<EvaluatorOutput>(ctx, {
+              step: 'evaluate',
+              family: 'contract_checker',
+              activityId: act('contract_check'),
+              variables: {
+                chapter_text: chapterText,
+                chapter_contract: packVars.chapter_contract ?? JSON.stringify(input.contract),
+              },
+              pack: packIn,
+            });
+          case 'continuity_checker':
+            return modelCall<EvaluatorOutput>(ctx, {
+              step: 'evaluate',
+              family: 'continuity_checker',
+              activityId: act('continuity'),
+              variables: {
+                chapter_text: chapterText,
+                locked_facts: packVars.timeline_position ?? '(none)',
+                story_position: orNone(
+                  packSection(['active_constraints', 'timeline', 'contract']) ??
+                    packVars.timeline_position,
+                ),
+                locked_canon: orNone(packSection(['locked_facts'])),
+              },
+              pack: packIn,
+            });
+          case 'knowledge_leak_checker':
+            return modelCall<EvaluatorOutput>(ctx, {
+              step: 'evaluate',
+              family: 'knowledge_leak_checker',
+              activityId: act('knowledge_leak'),
+              variables: {
+                chapter_text: chapterText,
+                knowledge_table: packVars.canon_state ?? '(none)',
+                knowledge_guards: packVars.timeline_position ?? '(none)',
+                secrets: packVars.canon_state ?? '(none)',
+                knowledge_stances: orNone(packSection(['knowledge'])),
+                knowledge_guard_list: orNone(packSection(['knowledge_guards'])),
+                reader_secrets: orNone(
+                  readerSecrets(input.contract.chapter_number, input.bible, lang),
+                ),
+              },
+              pack: packIn,
+            });
+          case 'prose_judge':
+            return modelCall<EvaluatorOutput>(ctx, {
+              step: 'evaluate',
+              family: 'prose_judge',
+              activityId: act('prose_judge'),
+              variables: {
+                chapter_text: chapterText,
+                prose_lint_report: ko
+                  ? `한국어 출력 언어 검사: 신뢰도 ${det.output_language.english_confidence}; 분량 ${det.length.count}${det.length.unit === 'characters' ? '자' : ` ${det.length.unit}`}.${det.ko_style ? `\n[결정적 문체 검사 — 번역투·AI 상투구·모바일 호흡]\n${koStyleDigest(det.ko_style)}` : ''}`
+                  : `English output-language check: confidence ${det.output_language.english_confidence}; length ${det.length.count} ${det.length.unit}.`,
+              },
+              block: compileFor(ctx, 'judge_rubric_prose'),
+            });
+          case 'structure_judge':
+            return modelCall<EvaluatorOutput>(ctx, {
+              step: 'evaluate',
+              family: 'structure_judge',
+              activityId: act('structure_judge'),
+              variables: {
+                chapter_text: chapterText,
+                structure_lint_report: ko
+                  ? `문단 ${paragraphs.length}개; 잘림 검사 ${det.truncation.passed ? '통과' : '실패'}.${det.ko_style ? ` 대사 비중 ${String(Math.round(det.ko_style.metrics.dialogue_ratio * 100))}%, 긴 서술 문단 ${String(Math.round(det.ko_style.metrics.long_paragraph_ratio * 100))}%, 최장 문단 ${String(det.ko_style.metrics.max_paragraph_chars)}자.${det.ko_style.findings.some((f) => f.rule_id === 'KO-END-01') ? ' 마지막 문단이 요약·관조형으로 판정됨(KO-END-01).' : ''}` : ''}`
+                  : `paragraphs ${paragraphs.length}; truncation check ${det.truncation.passed ? 'passed' : 'FAILED'}.`,
+                contract_shape: ko
+                  ? `도입 ${input.contract.opening.type}; 절단 ${input.contract.hook.type}; 로컬 보상 ${input.contract.local_satisfaction.map((s) => s.type).join(', ')}; 장면 ${input.contract.scene_count}개.`
+                  : `opening ${input.contract.opening.type}; hook ${input.contract.hook.type}; local satisfaction ${input.contract.local_satisfaction.map((s) => s.type).join(', ')}; scenes ${input.contract.scene_count}.`,
+              },
+              block: compileFor(ctx, 'judge_rubric_structure'),
+            });
+          // Dimensions C and D. `standard.v1` gates genre and voice, so their evidence is required: without
+          // them the per-dimension gates and the ADR-0014 regression check have nothing to read and must fail
+          // closed. Each is its own immutable family with its own identity variant and its own gate — fluent
+          // prose, webnovel structure, genre fit and voice/register are never folded into one score
+          // (EVAL-SEPARATION-001).
+          case 'genre_judge':
+            return modelCall<EvaluatorOutput>(ctx, {
+              step: 'evaluate',
+              family: 'genre_judge',
+              activityId: act('genre_judge'),
+              variables: {
+                chapter_text: chapterText,
+                terminology_report: ko
+                  ? `허용 이름 ${input.allowlist.length}개; 주 장르 ${primaryGenre ?? '(미지정)'}.`
+                  : `allowlisted names ${input.allowlist.length}; primary genre ${primaryGenre ?? '(unspecified)'}.`,
+                terminology_checks: terminology?.text ?? none,
+              },
+              block: compileFor(ctx, 'judge_rubric_genre'),
+            });
+          case 'voice_judge':
+            return modelCall<EvaluatorOutput>(ctx, {
+              step: 'evaluate',
+              family: 'voice_judge',
+              activityId: act('voice_judge'),
+              variables: voiceV2
+                ? {
+                    chapter_text: chapterText,
+                    voice_cards: orNone(voiceCards(input.contract, input.bible, lang)),
+                    address_matrix: orNone(addressMatrix(input.contract, input.bible, lang)),
+                    register_digests: packVars.register_digests ?? none,
+                    register_check_report: register
+                      ? dialogueRegisterDigestKo(register)
+                      : ko
+                        ? '이 원고에는 결정적 말높이 검사가 없다.'
+                        : 'No deterministic register check exists for this manuscript language.',
+                  }
+                : {
+                    utterances: chapterText,
+                    register_digests: packVars.register_digests ?? '(none)',
+                    register_check_report: ko
+                      ? `말높이 요약 제공: ${packVars.register_digests ? '예' : '아니오'}.`
+                      : `dialogue register digests supplied: ${packVars.register_digests ? 'yes' : 'no'}.`,
+                  },
+              block: compileFor(
+                ctx,
+                voicePv?.identity_variant === 'judge_rubric_voice'
+                  ? 'judge_rubric_voice'
+                  : 'judge_rubric_prose',
+              ),
+            });
+          case 'promise_checker':
+            return modelCall<EvaluatorOutput>(ctx, {
+              step: 'evaluate',
+              family: 'promise_checker',
+              activityId: act('promise_check'),
+              variables: {
+                chapter_text: chapterText,
+                chapter_obligations: orNone(chapterObligations(input.contract, input.bible, lang)),
+                promise_ledger: orNone(packSection(['promises'])),
+              },
+              pack: packIn,
+            });
+          case 'repetition_judge':
+            return modelCall<EvaluatorOutput>(ctx, {
+              step: 'evaluate',
+              family: 'repetition_judge',
+              activityId: act('repetition_judge'),
+              variables: {
+                chapter_text: chapterText,
+                repetition_report: repetitionEvidence
+                  ? ko
+                    ? repetitionDigestKo(repetitionEvidence.report)
+                    : JSON.stringify(repetitionEvidence.report)
+                  : none,
+                recent_chapters: orNone(
+                  repetitionEvidence
+                    ? priorChapterEdges(repetitionEvidence.prior, lang)
+                    : undefined,
+                ),
+              },
+            });
+        }
+      };
+
+      // ---- run: at most max_parallel_evaluators in flight; findings enter in the fixed order below.
+      const results = new Map<EvaluatorName, { llmCallId: string; output: EvaluatorOutput }>();
+      const toRun = evaluators.filter((e) => runs.has(e));
+      const done = await runBounded(
+        toRun.map((e) => () => call(e)),
+        policyEval?.max_parallel_evaluators ?? 1,
+      );
+      toRun.forEach((e, i) => {
+        const r = done[i];
+        if (r) results.set(e, r);
+      });
+      const carriedFrom = (e: EvaluatorName) =>
+        results.has(e) || !carry ? {} : { carried_from: carry.scorecard.id };
+      const carriedIssues = (e: EvaluatorName): Issue[] => {
+        const prior = carry?.scorecard.issues.filter((i) => i.source === SOURCE[e]) ?? [];
+        const spans = carriedSpans.get(e) ?? [];
+        return prior.map((i, idx) => {
+          const { chapter_span: _old, ...rest } = i;
+          const span = spans[idx];
+          return {
+            ...rest,
+            id: issueIdFor(ctx, v.id, SOURCE[e], idx),
+            ...(span ? { chapter_span: { ...span, manuscript_version_id: v.id } } : {}),
+          };
+        });
+      };
+      const priorSection = (key: string): Record<string, unknown> | undefined =>
+        (
+          carry?.scorecard.sections as
+            Record<string, Record<string, unknown> | undefined> | undefined
+        )?.[key];
+
+      // ---- contract criteria (deterministic criteria always follow the re-run deterministic checks)
+      const contractRun = results.get('contract_checker');
+      const criteria = contractRun?.output.criteria ?? [];
+      const carriedCriteria = contractRun
+        ? undefined
+        : carry?.scorecard.acceptance.criteria_results;
       const criteriaResults = input.contract.acceptance_criteria.map((c) => {
         const r = criteria.find((x) => x.criterion_id === c.id);
         if (c.kind === 'deterministic') {
@@ -478,9 +790,13 @@ export async function evaluateVersion(
             ? det.output_language.passed
             : c.id.includes('LEN')
               ? det.length.passed
-              : (r?.passed ?? false);
+              : (r?.passed ??
+                carriedCriteria?.find((x) => x.criterion_id === c.id)?.passed ??
+                false);
           return { criterion_id: c.id, passed, note: 'deterministic' };
         }
+        const kept = carriedCriteria?.find((x) => x.criterion_id === c.id);
+        if (kept) return { ...kept };
         return {
           criterion_id: c.id,
           passed: r?.passed ?? false,
@@ -490,151 +806,102 @@ export async function evaluateVersion(
           ...(r?.note ? { note: r.note } : {}),
         };
       });
-      criteriaResults.forEach((cr, i) => {
-        if (!cr.passed)
-          issues.push(
-            toIssue(
-              ctx,
-              v.id,
-              'judge:contract_checker',
-              'contract',
-              {
-                kind: 'missing_required_event',
-                severity: 'major',
-                confidence: 0.9,
-                claim: `acceptance criterion ${cr.criterion_id} failed${cr.note ? `: ${cr.note}` : ''}`,
-              },
-              i,
-            ),
-          );
-      });
+      if (contractRun) {
+        evaluatorCalls.push(contractRun.llmCallId);
+        criteriaResults.forEach((cr, i) => {
+          if (!cr.passed)
+            issues.push(
+              toIssue(
+                ctx,
+                v.id,
+                'judge:contract_checker',
+                'contract',
+                {
+                  kind: 'missing_required_event',
+                  severity: 'major',
+                  confidence: 0.9,
+                  claim: `acceptance criterion ${cr.criterion_id} failed${cr.note ? `: ${cr.note}` : ''}`,
+                },
+                i,
+              ),
+            );
+        });
+      } else issues.push(...carriedIssues('contract_checker'));
 
-      const continuity = await modelCall<{ issues?: RawIssue[] }>(ctx, {
-        step: 'evaluate',
-        family: 'continuity_checker',
-        activityId: act('continuity'),
-        variables: {
-          chapter_text: chapterText,
-          locked_facts: checker.stored.variables.timeline_position ?? '(none)',
-        },
-        pack: packIn,
-      });
-      evaluatorCalls.push(continuity.llmCallId);
-      (continuity.output.issues ?? []).forEach((r, i) =>
-        issues.push(toIssue(ctx, v.id, 'judge:continuity_checker', 'continuity', r, i, anchor)),
-      );
+      // ---- model findings, in the ADR-0056 order; optional evaluators after the core seven
+      for (const e of evaluators) {
+        if (e === 'contract_checker') continue;
+        const r = results.get(e);
+        if (!r) {
+          issues.push(...carriedIssues(e));
+          continue;
+        }
+        evaluatorCalls.push(r.llmCallId);
+        (r.output.issues ?? []).forEach((raw, i) =>
+          issues.push(toIssue(ctx, v.id, SOURCE[e], EVALUATOR_DIMENSION[e], raw, i, anchor)),
+        );
+      }
 
-      const leak = await modelCall<{ issues?: RawIssue[] }>(ctx, {
-        step: 'evaluate',
-        family: 'knowledge_leak_checker',
-        activityId: act('knowledge_leak'),
-        variables: {
-          chapter_text: chapterText,
-          knowledge_table: checker.stored.variables.canon_state ?? '(none)',
-          knowledge_guards: checker.stored.variables.timeline_position ?? '(none)',
-          secrets: checker.stored.variables.canon_state ?? '(none)',
-        },
-        pack: packIn,
-      });
-      evaluatorCalls.push(leak.llmCallId);
-      (leak.output.issues ?? []).forEach((r, i) =>
-        issues.push(toIssue(ctx, v.id, 'judge:knowledge_leak_checker', 'knowledge', r, i, anchor)),
-      );
+      const callId = (e: EvaluatorName, key: string): string | undefined =>
+        results.get(e)?.llmCallId ?? (priorSection(key)?.evaluator_call_id as string | undefined);
+      const judgeOut = (e: EvaluatorName, key: string): JudgeOutput => {
+        const r = results.get(e);
+        if (r) return r.output;
+        const s = priorSection(key) ?? {};
+        return {
+          ...(typeof s.judge_score === 'number' ? { judge_score: s.judge_score } : {}),
+          dimension_scores: (s.dimension_scores ?? {}) as Record<string, number>,
+          drift_flags: (s.drift_flags ?? []) as string[],
+          ...(typeof s.hook_sentence_index === 'number'
+            ? { hook_sentence_index: s.hook_sentence_index }
+            : {}),
+          ...(typeof s.local_payoff_present === 'boolean'
+            ? { local_payoff_present: s.local_payoff_present }
+            : {}),
+          ...(typeof s.ending_type_detected === 'string'
+            ? { ending_type_detected: s.ending_type_detected }
+            : {}),
+        };
+      };
+      const prose = judgeOut('prose_judge', 'prose');
+      const structure = judgeOut('structure_judge', 'structure');
+      const genre = judgeOut('genre_judge', 'genre');
+      const voice = judgeOut('voice_judge', 'voice');
 
-      // Two separate judges, two separate identity variants, two separate gates.
-      const prose = await modelCall<JudgeOutput>(ctx, {
-        step: 'evaluate',
-        family: 'prose_judge',
-        activityId: act('prose_judge'),
-        variables: {
-          chapter_text: chapterText,
-          prose_lint_report:
-            ctx.identity.outputLanguage.language === 'ko'
-              ? `한국어 출력 언어 검사: 신뢰도 ${det.output_language.english_confidence}; 분량 ${det.length.count}${det.length.unit === 'characters' ? '자' : ` ${det.length.unit}`}.${det.ko_style ? `\n[결정적 문체 검사 — 번역투·AI 상투구·모바일 호흡]\n${koStyleDigest(det.ko_style)}` : ''}`
-              : `English output-language check: confidence ${det.output_language.english_confidence}; length ${det.length.count} ${det.length.unit}.`,
-        },
-        block: compileFor(ctx, 'judge_rubric_prose'),
-      });
-      evaluatorCalls.push(prose.llmCallId);
-      (prose.output.issues ?? []).forEach((r, i) =>
-        issues.push(toIssue(ctx, v.id, 'judge:prose_judge', 'prose', r, i, anchor)),
-      );
-      const structure = await modelCall<JudgeOutput>(ctx, {
-        step: 'evaluate',
-        family: 'structure_judge',
-        activityId: act('structure_judge'),
-        variables: {
-          chapter_text: chapterText,
-          structure_lint_report:
-            ctx.identity.outputLanguage.language === 'ko'
-              ? `문단 ${paragraphs.length}개; 잘림 검사 ${det.truncation.passed ? '통과' : '실패'}.${det.ko_style ? ` 대사 비중 ${String(Math.round(det.ko_style.metrics.dialogue_ratio * 100))}%, 긴 서술 문단 ${String(Math.round(det.ko_style.metrics.long_paragraph_ratio * 100))}%, 최장 문단 ${String(det.ko_style.metrics.max_paragraph_chars)}자.${det.ko_style.findings.some((f) => f.rule_id === 'KO-END-01') ? ' 마지막 문단이 요약·관조형으로 판정됨(KO-END-01).' : ''}` : ''}`
-              : `paragraphs ${paragraphs.length}; truncation check ${det.truncation.passed ? 'passed' : 'FAILED'}.`,
-          contract_shape:
-            ctx.identity.outputLanguage.language === 'ko'
-              ? `도입 ${input.contract.opening.type}; 절단 ${input.contract.hook.type}; 로컬 보상 ${input.contract.local_satisfaction.map((s) => s.type).join(', ')}; 장면 ${input.contract.scene_count}개.`
-              : `opening ${input.contract.opening.type}; hook ${input.contract.hook.type}; local satisfaction ${input.contract.local_satisfaction.map((s) => s.type).join(', ')}; scenes ${input.contract.scene_count}.`,
-        },
-        block: compileFor(ctx, 'judge_rubric_structure'),
-      });
-      evaluatorCalls.push(structure.llmCallId);
-      (structure.output.issues ?? []).forEach((r, i) =>
-        issues.push(toIssue(ctx, v.id, 'judge:structure_judge', 'structure', r, i, anchor)),
-      );
-
-      // Dimensions C and D. `standard.v1` gates genre and voice, so their evidence is required: without
-      // them the per-dimension gates and the ADR-0014 regression check have nothing to read and must fail
-      // closed. Each is its own immutable family with its own identity variant and its own gate — fluent
-      // English, webnovel structure, genre fit and voice/register are never folded into one score
-      // (EVAL-SEPARATION-001). The full evaluator build-out (richer evidence, calibration) is B-6-5.
-      const genre = await modelCall<JudgeOutput>(ctx, {
-        step: 'evaluate',
-        family: 'genre_judge',
-        activityId: act('genre_judge'),
-        variables: {
-          chapter_text: chapterText,
-          terminology_report:
-            ctx.identity.outputLanguage.language === 'ko'
-              ? `허용 이름 ${input.allowlist.length}개; 주 장르 ${input.spec.items.find((i) => i.category === 'genre')?.text ?? '(미지정)'}.`
-              : `allowlisted names ${input.allowlist.length}; primary genre ${input.spec.items.find((i) => i.category === 'genre')?.text ?? '(unspecified)'}.`,
-        },
-        block: compileFor(ctx, 'judge_rubric_genre'),
-      });
-      evaluatorCalls.push(genre.llmCallId);
-      (genre.output.issues ?? []).forEach((r, i) =>
-        issues.push(toIssue(ctx, v.id, 'judge:genre_judge', 'genre', r, i, anchor)),
-      );
-      const voice = await modelCall<JudgeOutput>(ctx, {
-        step: 'evaluate',
-        family: 'voice_judge',
-        activityId: act('voice_judge'),
-        variables: {
-          utterances: chapterText,
-          register_digests: checker.stored.variables.register_digests ?? '(none)',
-          register_check_report:
-            ctx.identity.outputLanguage.language === 'ko'
-              ? `말높이 요약 제공: ${checker.stored.variables.register_digests ? '예' : '아니오'}.`
-              : `dialogue register digests supplied: ${checker.stored.variables.register_digests ? 'yes' : 'no'}.`,
-        },
-        block: compileFor(ctx, 'judge_rubric_prose'),
-      });
-      evaluatorCalls.push(voice.llmCallId);
-      (voice.output.issues ?? []).forEach((r, i) =>
-        issues.push(toIssue(ctx, v.id, 'judge:voice_judge', 'voice', r, i, anchor)),
-      );
-
+      // ---- gated dimension scores: the judge's own number, or rubric sub-scores + composites (ADR-0060)
       const gates = ctx.policy.gates;
-      const proseScore = clamp(prose.output.judge_score ?? 0);
-      const structureScore = clamp(structure.output.judge_score ?? 0);
-      const genreScore = clamp(genre.output.judge_score ?? 0);
-      const voiceScore = clamp(voice.output.judge_score ?? 0);
+      const subscores = policyEval?.score_model === 'rubric_subscores';
+      const lintOf = (...dims: Issue['dimension'][]) =>
+        policyEval
+          ? lintComposite(
+              det.issues.filter((i) => dims.includes(i.dimension)),
+              policyEval.lint_penalty_points,
+            )
+          : 100;
+      const composites: Record<GatedDimension, number> = {
+        prose: lintOf('prose', 'output_language'),
+        structure: lintOf('structure'),
+        genre: Math.round((terminology?.compliance ?? 1) * 1000) / 10,
+        voice: Math.round((1 - (register?.register_violation_rate ?? 0)) * 1000) / 10,
+      };
+      const rubricOf = (d: GatedDimension, out: JudgeOutput) =>
+        rubricScore(d, dimensionScores(out.dimension_scores));
+      const scoreOf = (d: GatedDimension, out: JudgeOutput) =>
+        subscores
+          ? composeDimensionScore(
+              gates.dimensions[d]?.judge_weight ?? 1,
+              rubricOf(d, out),
+              composites[d],
+            )
+          : clamp(out.judge_score ?? 0);
+      const proseScore = scoreOf('prose', prose);
+      const structureScore = scoreOf('structure', structure);
+      const genreScore = scoreOf('genre', genre);
+      const voiceScore = scoreOf('voice', voice);
       // Every gated dimension of the pinned policy gets its own result, from the policy's own thresholds.
       // A dimension the policy does not gate contributes no result — and therefore no silent pass.
-      const gateFor = (name: 'prose' | 'structure' | 'genre' | 'voice') =>
-        gates.dimensions[name]?.min_score;
-      const dimensionResult = (
-        dimension: 'prose' | 'structure' | 'genre' | 'voice',
-        score: number,
-      ) => {
+      const gateFor = (name: GatedDimension) => gates.dimensions[name]?.min_score;
+      const dimensionResult = (dimension: GatedDimension, score: number) => {
         const threshold = gateFor(dimension);
         return threshold === undefined
           ? undefined
@@ -669,6 +936,49 @@ export async function evaluateVersion(
         issue_ids: issues.filter((i) => i.dimension === dim).map((i) => i.id),
         ...extra,
       });
+      /** A checker's section: 0/100 from its own findings, passed without blocking or major ones. */
+      const findingSection = (
+        dim: Issue['dimension'],
+        e: EvaluatorName,
+        key: string,
+        countsNotes: boolean,
+        extra: Record<string, unknown> = {},
+      ) => {
+        const own = issues.filter((i) => i.dimension === dim);
+        return section(
+          dim,
+          own.some((i) => countsNotes || i.severity !== 'note') ? 0 : 100,
+          !own.some((i) => i.severity === 'blocking' || i.severity === 'major'),
+          { evaluator_call_id: callId(e, key), ...carriedFrom(e), ...extra },
+        );
+      };
+      // ADR-0060 audit fields, only under a policy with an evaluation block (ADR-0056 scorecards unchanged).
+      const basis = (d: GatedDimension, out: JudgeOutput, e: EvaluatorName) =>
+        policyEval
+          ? {
+              score_model: policyEval.score_model,
+              ...(subscores
+                ? {
+                    rubric_score: rubricOf(d, out),
+                    judge_weight: gates.dimensions[d]?.judge_weight ?? 1,
+                  }
+                : {}),
+              ...(d === 'prose' || d === 'structure' ? { lint_composite: composites[d] } : {}),
+              ...(d === 'genre' ? { terminology_compliance: composites.genre / 100 } : {}),
+              ...(d === 'voice' && register
+                ? { register_violation_rate: register.register_violation_rate }
+                : {}),
+              ...carriedFrom(e),
+            }
+          : {};
+      const promiseRun = results.get('promise_checker');
+      const touches = promiseRun
+        ? (promiseRun.output.touches ?? []).map((t) => ({
+            promise_id: typeof t.promise_id === 'string' ? t.promise_id : '',
+            planned: typeof t.planned === 'string' ? t.planned : '',
+            found: t.found === true,
+          }))
+        : priorSection('promises')?.touches;
       const scorecard: Scorecard = {
         id: issueIdFor(ctx, v.id, 'scorecard', input.round),
         manuscript_version_id: v.id,
@@ -683,37 +993,41 @@ export async function evaluateVersion(
         },
         sections: {
           prose: section('prose', proseScore, dimensionPassed('prose'), {
-            judge_score: proseScore,
-            drift_flags: driftFlags('prose', prose.output.drift_flags),
-            dimension_scores: dimensionScores(prose.output.dimension_scores),
-            evaluator_call_id: prose.llmCallId,
+            judge_score: clamp(prose.judge_score ?? 0),
+            drift_flags: driftFlags('prose', prose.drift_flags),
+            dimension_scores: dimensionScores(prose.dimension_scores),
+            evaluator_call_id: callId('prose_judge', 'prose'),
+            ...basis('prose', prose, 'prose_judge'),
           }),
           structure: section('structure', structureScore, dimensionPassed('structure'), {
-            judge_score: structureScore,
-            drift_flags: driftFlags('structure', structure.output.drift_flags),
-            dimension_scores: dimensionScores(structure.output.dimension_scores),
-            ...(structure.output.hook_sentence_index !== undefined
-              ? { hook_sentence_index: structure.output.hook_sentence_index }
+            judge_score: clamp(structure.judge_score ?? 0),
+            drift_flags: driftFlags('structure', structure.drift_flags),
+            dimension_scores: dimensionScores(structure.dimension_scores),
+            ...(structure.hook_sentence_index !== undefined
+              ? { hook_sentence_index: structure.hook_sentence_index }
               : {}),
-            ...(structure.output.local_payoff_present !== undefined
-              ? { local_payoff_present: structure.output.local_payoff_present }
+            ...(structure.local_payoff_present !== undefined
+              ? { local_payoff_present: structure.local_payoff_present }
               : {}),
-            ...(structure.output.ending_type_detected
-              ? { ending_type_detected: structure.output.ending_type_detected }
+            ...(structure.ending_type_detected
+              ? { ending_type_detected: structure.ending_type_detected }
               : {}),
-            evaluator_call_id: structure.llmCallId,
+            evaluator_call_id: callId('structure_judge', 'structure'),
+            ...basis('structure', structure, 'structure_judge'),
           }),
           genre: section('genre', genreScore, dimensionPassed('genre'), {
-            judge_score: genreScore,
-            drift_flags: driftFlags('genre', genre.output.drift_flags),
-            dimension_scores: dimensionScores(genre.output.dimension_scores),
-            evaluator_call_id: genre.llmCallId,
+            judge_score: clamp(genre.judge_score ?? 0),
+            drift_flags: driftFlags('genre', genre.drift_flags),
+            dimension_scores: dimensionScores(genre.dimension_scores),
+            evaluator_call_id: callId('genre_judge', 'genre'),
+            ...basis('genre', genre, 'genre_judge'),
           }),
           voice: section('voice', voiceScore, dimensionPassed('voice'), {
-            judge_score: voiceScore,
-            drift_flags: driftFlags('voice', voice.output.drift_flags),
-            dimension_scores: dimensionScores(voice.output.dimension_scores),
-            evaluator_call_id: voice.llmCallId,
+            judge_score: clamp(voice.judge_score ?? 0),
+            drift_flags: driftFlags('voice', voice.drift_flags),
+            dimension_scores: dimensionScores(voice.dimension_scores),
+            evaluator_call_id: callId('voice_judge', 'voice'),
+            ...basis('voice', voice, 'voice_judge'),
           }),
           output_language: section(
             'output_language',
@@ -728,29 +1042,33 @@ export async function evaluateVersion(
             'contract',
             criteriaResults.every((c) => c.passed) ? 100 : 0,
             criteriaResults.every((c) => c.passed),
-            { evaluator_call_id: contractCall.llmCallId },
+            {
+              evaluator_call_id: callId('contract_checker', 'contract_compliance'),
+              ...carriedFrom('contract_checker'),
+            },
           ),
-          continuity: section(
-            'continuity',
-            issues.some((i) => i.dimension === 'continuity' && i.severity !== 'note') ? 0 : 100,
-            !issues.some(
-              (i) =>
-                i.dimension === 'continuity' &&
-                (i.severity === 'blocking' || i.severity === 'major'),
-            ),
-            { evaluator_call_id: continuity.llmCallId },
-          ),
-          knowledge: section(
-            'knowledge',
-            issues.some((i) => i.dimension === 'knowledge') ? 0 : 100,
-            !issues.some(
-              (i) =>
-                i.dimension === 'knowledge' &&
-                (i.severity === 'blocking' || i.severity === 'major'),
-            ),
-            { evaluator_call_id: leak.llmCallId },
-          ),
+          continuity: findingSection('continuity', 'continuity_checker', 'continuity', false),
+          knowledge: findingSection('knowledge', 'knowledge_leak_checker', 'knowledge', true),
           length: section('length', det.length.passed ? 100 : 0, det.length.passed),
+          ...(optional.includes('promise_checker')
+            ? {
+                promises: findingSection('promise', 'promise_checker', 'promises', false, {
+                  ...(touches ? { touches } : {}),
+                }),
+              }
+            : {}),
+          ...(optional.includes('repetition_judge')
+            ? {
+                repetition: findingSection('repetition', 'repetition_judge', 'repetition', false, {
+                  ...(repetitionEvidence
+                    ? {
+                        overlap_ratio: repetitionEvidence.report.overlap_ratio,
+                        prior_chapters: repetitionEvidence.report.prior_chapters,
+                      }
+                    : {}),
+                }),
+              }
+            : {}),
         },
         issues,
         acceptance: {
@@ -786,6 +1104,7 @@ export async function evaluateVersion(
         blocking: issues.filter((i) => i.severity === 'blocking' || i.severity === 'major'),
         approvable: autoApprovable,
         packs: { checker: checker.ref.pack_id, checker_hash: checker.ref.pack_hash },
+        ...(policyEval ? { mode: plan.mode, rerun: plan.rerun } : {}),
       };
     },
     v.id,

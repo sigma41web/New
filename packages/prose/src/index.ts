@@ -9,3 +9,5 @@ export * from './platform-format.js';
 export * from './local-embeddings.js';
 export * from './ko-style.js';
 export * from './safe-regex.js';
+export * from './dialogue-register.js';
+export * from './repetition.js';

@@ -513,11 +513,14 @@ export async function produceChapter(
       canonVersion: bible.canonVersion,
       allowlist,
       round,
+      bible: input.bible,
     });
     scorecards.push(summarizeScorecard(evaluation.scorecard, evaluation.scorecardArtifactId));
     guard('evaluate');
     let revision: ChapterProductionResult['revision'];
     const maxRounds = ctx.policy.revision.max_rounds;
+    // ADR-0060: patches applied since every evaluator last ran on the whole chapter.
+    let patchesSinceFull = 0;
     while (!evaluation.approvable && round < maxRounds) {
       const targets = revisionTargets(evaluation.scorecard);
       const dimension = pickRevisionDimension(targets);
@@ -536,8 +539,10 @@ export async function produceChapter(
       });
       versions.push(revised.version);
       revision = { rounds: round, dimension, patch_artifact_id: revised.patchArtifactId };
+      const parentText = current.text;
       current = revised.version;
       guard('revise');
+      patchesSinceFull++;
       evaluation = await evaluateVersion(ctx, {
         version: current,
         contract: contract.contract,
@@ -545,7 +550,16 @@ export async function produceChapter(
         canonVersion: bible.canonVersion,
         allowlist,
         round,
+        bible: input.bible,
+        carry: {
+          scorecard: beforeScorecard,
+          versionText: parentText,
+          targetedDimension: dimension,
+          changedClaims: revised.patch.changed_claims.length > 0 || revised.patch.scope === 'scene',
+          patchesSinceFull,
+        },
       });
+      if (evaluation.mode !== 'targeted') patchesSinceFull = 0;
       scorecards.push(summarizeScorecard(evaluation.scorecard, evaluation.scorecardArtifactId));
 
       // ---- ADR-0014 patch regression: the patch must earn its place before it can reach approval.

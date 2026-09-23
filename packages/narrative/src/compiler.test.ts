@@ -83,6 +83,7 @@ describe('Narrative Identity Block compiler', () => {
     'judge_rubric_prose',
     'judge_rubric_structure',
     'judge_rubric_genre',
+    'judge_rubric_voice',
     'summarizer_min',
   ];
 

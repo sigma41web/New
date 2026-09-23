@@ -97,6 +97,64 @@
       "required": ["issues"],
       "properties": { "issues": { "type": "array", "items": { "$ref": "#/$defs/checkerIssue" } } }
     },
+    "promise_checker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["touches", "issues"],
+      "description": "ADR-0060: what the chapter did to each promise it was planned to touch, and the promise findings.",
+      "properties": {
+        "touches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["promise_id", "planned", "found"],
+            "properties": {
+              "promise_id": { "type": "string", "minLength": 1 },
+              "planned": { "type": "string", "enum": ["open", "advance", "pay"], "description": "The chapter contract's promise touch (setups/payoffs kind)." },
+              "found": { "type": "boolean" },
+              "quote": { "type": "string", "description": "A verbatim phrase of the manuscript that carries the touch; empty when found is false." }
+            }
+          }
+        },
+        "issues": { "type": "array", "items": { "$ref": "#/$defs/promiseIssue" } }
+      }
+    },
+    "promiseIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "severity", "claim", "quote"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["promise_forgotten", "payoff_without_setup", "canon_contradiction", "other"] },
+        "severity": { "type": "string", "enum": ["minor", "major", "blocking"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "claim": { "type": "string", "minLength": 1 },
+        "quote": { "type": "string" },
+        "promise_id": { "type": "string", "description": "The promise the finding is about." },
+        "repair": { "$ref": "issue.schema.json#/properties/repair" }
+      }
+    },
+    "repetition_judge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["issues"],
+      "description": "ADR-0060: repetition findings against the chapter itself and the accepted chapters before it.",
+      "properties": { "issues": { "type": "array", "items": { "$ref": "#/$defs/repetitionIssue" } } }
+    },
+    "repetitionIssue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "severity", "claim", "quote"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["repeated_scene", "repeated_paragraph", "repetitive_arc", "repetitive_sentence_openings", "other"] },
+        "severity": { "type": "string", "enum": ["minor", "major", "blocking"] },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "claim": { "type": "string", "minLength": 1 },
+        "quote": { "type": "string" },
+        "earlier_chapter": { "type": "integer", "minimum": 1, "description": "The accepted chapter the passage or beat repeats, when there is one." },
+        "repair": { "$ref": "issue.schema.json#/properties/repair" }
+      }
+    },
     "contract_checker": {
       "type": "object",
       "additionalProperties": false,

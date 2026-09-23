@@ -1,0 +1,36 @@
+{
+  "family": "continuity_checker",
+  "version": "4.4.0",
+  "role": "continuity_checker",
+  "purpose": "Korean webnovel evaluator with its own inputs (ADR-0060), 4.4.0.",
+  "style_sensitive": false,
+  "manuscript_producing": false,
+  "identity_variant": null,
+  "model_class": "R",
+  "input_variables": [
+    "chapter_text",
+    "canon_state",
+    "locked_canon",
+    "recent_events",
+    "world_rules",
+    "story_position"
+  ],
+  "output_schema": null,
+  "output_mode": "json",
+  "params": {
+    "temperature": 0.1,
+    "max_tokens": 4000,
+    "top_p": 1
+  },
+  "failure_behavior": {
+    "on_schema_invalid": "repair_then_regenerate",
+    "on_truncation": "fail",
+    "max_attempts": 2
+  },
+  "status": "active",
+  "changelog": "4.4.0 — evaluator inputs (ADR-0060): continuity reads locked facts in their own slot; knowledge-leak reads stances, guards and reader secrets separately; voice has its own rubric, voice cards, address terms and a register report; genre reads a terminology and device report; promise_checker and repetition_judge are new.",
+  "regression_cases": [
+    "continuity_checker.fixture.smoke"
+  ],
+  "content_hash": "sha256:5cc3535f7e5c61afe4485fd080b04e1fdac8b899f7a1c215ed191be18cdb584f"
+}

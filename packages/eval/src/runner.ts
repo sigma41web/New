@@ -76,7 +76,7 @@ export const DIMENSION_JUDGES: Readonly<
   prose: { family: 'prose_judge', variant: 'judge_rubric_prose' },
   structure: { family: 'structure_judge', variant: 'judge_rubric_structure' },
   genre: { family: 'genre_judge', variant: 'judge_rubric_genre' },
-  voice: { family: 'voice_judge', variant: 'judge_rubric_prose' },
+  voice: { family: 'voice_judge', variant: 'judge_rubric_voice' },
 };
 
 const route = (modelId: string, family: string) => ({
@@ -442,7 +442,9 @@ async function evaluateOne(
   if (!input.recordings.has(recordingKey))
     return { failure: { code: 'MISSING_RECORDING', detail: recordingKey, ...where } };
 
-  const block = compileIdentityBlock(input.identity, judge.variant);
+  // The pinned prompt version names its own rubric variant (voice_judge@4.4.0: judge_rubric_voice).
+  const blockVariant = pv.identity_variant ?? judge.variant;
+  const block = compileIdentityBlock(input.identity, blockVariant);
   const vars: Record<string, string> = {
     narrative_identity_block: block.text,
     identity_tail: block.tail,
@@ -485,7 +487,7 @@ async function evaluateOne(
       narrativeIdentityRef: {
         blockHash: block.hash,
         identityVersionId: IDENTITY_VERSION as never,
-        roleVariant: judge.variant,
+        roleVariant: blockVariant,
         outputLanguage: 'en',
         outputLanguageContractHash: block.outputLanguageContractHash,
         traditionContractHash: block.traditionContractHash,

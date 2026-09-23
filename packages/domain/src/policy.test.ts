@@ -4,13 +4,39 @@ import { canonicalPolicyHash, loadPolicies, overrideClassFor, requirePolicy } fr
 describe('Production Policy (ADR-0041 / ADR-0042)', () => {
   const policies = loadPolicies();
 
-  it('loads the three shipped tiers with verified content hashes', () => {
+  it('loads the shipped policies with verified content hashes', () => {
     expect([...policies.keys()].sort()).toEqual([
       'policy/economy@1',
       'policy/premium@1',
       'policy/standard@1',
+      'policy/standard@2',
     ]);
     for (const p of policies.values()) expect(p.content_hash).toBe(canonicalPolicyHash(p));
+  });
+
+  it('standard.v2 is standard.v1 plus the ADR-0060 evaluation block', () => {
+    const v1 = requirePolicy('policy/standard@1', policies);
+    const v2 = requirePolicy('policy/standard@2', policies);
+    expect(v1.evaluation).toBeUndefined();
+    expect(v2.evaluation).toEqual({
+      max_parallel_evaluators: 4,
+      optional_evaluators: ['promise_checker', 'repetition_judge'],
+      score_model: 'rubric_subscores',
+      reevaluation: 'targeted',
+      lint_penalty_points: { minor: 4, major: 15, blocking: 40 },
+    });
+    const strip = (p: typeof v1) => {
+      const {
+        version: _v,
+        name: _n,
+        content_hash: _h,
+        evaluation: _e,
+        calibration: _c,
+        ...rest
+      } = p;
+      return rest;
+    };
+    expect(strip(v2)).toEqual(strip(v1));
   });
 
   it('standard.v1 resolves the former 2-vs-3 revision-round disagreement to 3 and gates per dimension', () => {

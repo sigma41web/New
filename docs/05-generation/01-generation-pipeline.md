@@ -108,6 +108,10 @@ accepted chapter (amortized).
       pacing/hook, dimension B) · **genre_judge** (C) · **voice_judge** (D) · repetition_judge
     → Scorecard with separate sections per dimension (EVAL-SEPARATION-001); issues clustered by span and
       dimension
+    The pinned Production Policy's `evaluation` block (ADR-0060) sets how many evaluator calls run at once
+    (`max_parallel_evaluators`) and which of promise_checker / repetition_judge join the core seven
+    (`optional_evaluators`); findings enter the scorecard in a fixed order whatever the completion order. A
+    policy without the block runs the core seven one after another.
 [6] decision:
       no blocking & no major → [8]
       else → RevisionWorkflow (child): patch-first repair (see 02-evaluation-and-revision-pipeline.md)

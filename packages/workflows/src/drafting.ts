@@ -62,6 +62,11 @@ export interface StoredPack {
   readonly narrativeIdentityRef: ContextPack['narrativeIdentityRef'];
   readonly renderedSystem: string;
   readonly renderedUser: string;
+  /**
+   * Rendered sections by name (ADR-0060), so an evaluator can read one section instead of the variable it
+   * shares with others. Absent on packs checkpointed before ADR-0060.
+   */
+  readonly sections?: readonly { readonly name: string; readonly text: string }[] | undefined;
 }
 
 export function storedPack(pack: ContextPack): StoredPack {
@@ -75,7 +80,20 @@ export function storedPack(pack: ContextPack): StoredPack {
     narrativeIdentityRef: pack.narrativeIdentityRef,
     renderedSystem: pack.renderedSystem,
     renderedUser: pack.renderedUser,
+    sections: pack.sections.map((s) => ({ name: s.name, text: s.text })),
   };
+}
+
+/**
+ * The text of the named sections of a stored pack, in pack order; `undefined` when the pack predates
+ * section storage, `''` when it has none of them.
+ */
+export function packSections(pack: StoredPack, names: readonly string[]): string | undefined {
+  if (!pack.sections) return undefined;
+  return pack.sections
+    .filter((s) => names.includes(s.name))
+    .map((s) => s.text)
+    .join('\n\n');
 }
 
 export interface BuiltPack {

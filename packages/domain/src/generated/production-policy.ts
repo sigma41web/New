@@ -33,6 +33,35 @@ export interface ProductionPolicy {
      */
     regression_tolerance_points?: number;
   };
+  /**
+   * Evaluation orchestration (ADR-0060). A policy without this block keeps the ADR-0056 behaviour: evaluators run one after another, only the seven core evaluators run, a gated dimension reads the judge's own 0-100 judge_score and every evaluator re-runs after a patch.
+   */
+  evaluation?: {
+    /**
+     * Model evaluators of one manuscript version that may be in flight at once; results are assembled in a fixed order whatever the completion order
+     */
+    max_parallel_evaluators: number;
+    /**
+     * Evaluators beyond the core seven that run for every version; each writes its own scorecard section and gates through its blocking/major issues
+     */
+    optional_evaluators: ('promise_checker' | 'repetition_judge')[];
+    /**
+     * judge_score: a gated dimension reads the judge's 0-100 number. rubric_subscores: the dimension score is judge_weight x the judge's 1-5 rubric sub-scores mapped to 0-100, plus (1 - judge_weight) x the dimension's deterministic composite
+     */
+    score_model: 'judge_score' | 'rubric_subscores';
+    /**
+     * targeted: after a patch the deterministic checks and the targeted dimension's evaluator re-run, continuity and knowledge re-run when the patch changed claims, and every other evaluator re-runs only when one of its carried findings no longer anchors or revision.smoke_after_patches patches have accumulated since its last run
+     */
+    reevaluation: 'full' | 'targeted';
+    /**
+     * Points a deterministic finding takes off its dimension's lint composite (starting at 100, floored at 0) under rubric_subscores
+     */
+    lint_penalty_points: {
+      minor: number;
+      major: number;
+      blocking: number;
+    };
+  };
   candidates: {
     chapter_candidates: number;
     concept_candidates: number;

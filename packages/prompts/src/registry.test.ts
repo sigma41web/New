@@ -27,8 +27,13 @@ const REQUIRED_FAMILIES = [
   'canon_extractor',
   'extraction_reconciler',
   'factual_summarizer',
+  // ADR-0060
+  'promise_checker',
+  'repetition_judge',
 ];
-const TOTAL_PROMPT_VERSIONS = 297;
+const TOTAL_PROMPT_VERSIONS = 303;
+/** Families that first appear after the v3/v4.0.0 families (ADR-0060). */
+const ADDED_AFTER_V4: ReadonlySet<string> = new Set(['promise_checker', 'repetition_judge']);
 /** The active default set (latest `active` version of every family). */
 const ACTIVE_VERSION = '4.0.0';
 /** Families with a later live-run fix on top of ACTIVE_VERSION (ADR-0056). */
@@ -42,10 +47,12 @@ const ACTIVE_OVERRIDES: Readonly<Record<string, string>> = {
   scene_writer: '4.2.0',
   structure_judge: '4.1.0',
   prose_judge: '4.1.0',
-  genre_judge: '4.1.0',
-  voice_judge: '4.1.0',
-  continuity_checker: '4.1.0',
-  knowledge_leak_checker: '4.1.0',
+  genre_judge: '4.4.0',
+  voice_judge: '4.4.0',
+  continuity_checker: '4.4.0',
+  knowledge_leak_checker: '4.4.0',
+  promise_checker: '4.4.0',
+  repetition_judge: '4.4.0',
 };
 
 describe('prompt registry (ADR-0016)', () => {
@@ -261,6 +268,7 @@ describe('prompt registry (ADR-0016)', () => {
 
   it('v4 keeps the v3 variable surfaces and output shapes, except the prose-only scene writer (ADR-0056)', () => {
     for (const fam of reg.families()) {
+      if (ADDED_AFTER_V4.has(fam)) continue;
       const v3 = reg.get(`${fam}@3.0.0`);
       const v4 = reg.get(`${fam}@4.0.0`);
       expect(v4.output_schema, fam).toBe(v3.output_schema);
@@ -282,9 +290,60 @@ describe('prompt registry (ADR-0016)', () => {
     expect(writer.system_template).toMatch(/원고 본문만 출력한다/);
   });
 
+  it('v4.4.0 gives every evaluator its own inputs and adds the two missing evaluators (ADR-0060)', () => {
+    const continuity = reg.get('continuity_checker@4.4.0');
+    expect(continuity.input_variables).toEqual(
+      expect.arrayContaining(['locked_canon', 'story_position', 'canon_state', 'chapter_text']),
+    );
+    expect(continuity.input_variables).not.toContain('locked_facts');
+    const leak = reg.get('knowledge_leak_checker@4.4.0');
+    expect(leak.input_variables).toEqual([
+      'chapter_text',
+      'knowledge_stances',
+      'knowledge_guard_list',
+      'reader_secrets',
+    ]);
+    const voice = reg.get('voice_judge@4.4.0');
+    expect(voice.identity_variant).toBe('judge_rubric_voice');
+    expect(voice.input_variables).toEqual(
+      expect.arrayContaining(['voice_cards', 'address_matrix', 'register_check_report']),
+    );
+    expect(reg.get('genre_judge@4.4.0').input_variables).toEqual([
+      'chapter_text',
+      'terminology_checks',
+    ]);
+    for (const fam of ['promise_checker', 'repetition_judge']) {
+      const v = reg.get(`${fam}@4.4.0`);
+      expect(v, fam).toMatchObject({
+        style_sensitive: false,
+        output_mode: 'json',
+        status: 'active',
+      });
+      expect(v.system_template, fam).toMatch(/[\uac00-\ud7a3]/);
+    }
+    expect(reg.get('promise_checker@4.4.0').input_variables).toEqual([
+      'chapter_text',
+      'chapter_obligations',
+      'promise_ledger',
+    ]);
+    // The four existing families keep their answer example: only the inputs changed.
+    for (const fam of [
+      'continuity_checker',
+      'knowledge_leak_checker',
+      'voice_judge',
+      'genre_judge',
+    ]) {
+      const example = (t: string) =>
+        t.split('\n')[t.split('\n').findIndex((l) => l.startsWith('[출력 스키마')) + 1];
+      expect(example(reg.get(`${fam}@4.4.0`).user_template), fam).toBe(
+        example(reg.get(`${fam}@4.1.0`).user_template),
+      );
+    }
+  });
+
   it('builds a pinned prompt set from the active versions', () => {
     const set = reg.activeSet();
-    expect(Object.keys(set.mapping)).toHaveLength(25);
+    expect(Object.keys(set.mapping)).toHaveLength(27);
     for (const fam of Object.keys(set.mapping)) {
       expect(set.mapping[fam], fam).toBe(`${fam}@${ACTIVE_OVERRIDES[fam] ?? ACTIVE_VERSION}`);
     }

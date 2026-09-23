@@ -22,7 +22,7 @@ BASE = os.path.join(ROOT, "packages", "prompts", "families")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 SOURCE_VERSION = "2.2.5"
-KNOWN = ["3.0.0", "4.0.0", "4.0.1", "4.1.0", "4.2.0", "4.3.0"]
+KNOWN = ["3.0.0", "4.0.0", "4.0.1", "4.1.0", "4.2.0", "4.3.0", "4.4.0"]
 
 
 def content_hash(meta: dict, system: str, user: str) -> str:

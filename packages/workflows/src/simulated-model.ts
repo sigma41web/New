@@ -566,12 +566,60 @@ function scriptByRole(req: ProviderRequest) {
       });
     case 'continuity_checker':
     case 'knowledge_leak_checker':
+    case 'repetition_judge':
       return json({ issues: [] });
+    case 'promise_checker':
+      return json({ touches: [], issues: [] });
+    // The rubric keys the judges' output shapes ask for (ADR-0060 composes gated scores from them).
     case 'prose_judge':
+      return json({
+        dimension_scores: {
+          idiomatic_korean: 4,
+          readability: 5,
+          register_fidelity: 4,
+          translation_markers: 5,
+        },
+        judge_score: 86,
+        drift_flags: [],
+        issues: [],
+      });
     case 'structure_judge':
+      return json({
+        dimension_scores: {
+          hook_timing: 5,
+          dialogue_forwardness: 4,
+          local_payoff: 4,
+          ending_pull: 5,
+          exposition_control: 4,
+        },
+        judge_score: 86,
+        drift_flags: [],
+        issues: [],
+      });
     case 'genre_judge':
+      return json({
+        dimension_scores: {
+          reader_fantasy: 4,
+          device_correctness: 5,
+          vocabulary_register: 4,
+          taboo_restraint: 5,
+        },
+        judge_score: 86,
+        drift_flags: [],
+        issues: [],
+      });
     case 'voice_judge':
-      return json({ dimension_scores: { a: 4 }, judge_score: 86, drift_flags: [], issues: [] });
+      return json({
+        dimension_scores: {
+          distinguishability: 4,
+          verbal_habits: 4,
+          register_naturalness: 5,
+          register_consistency: 5,
+        },
+        judge_score: 86,
+        drift_flags: [],
+        issues: [],
+      });
     case 'canon_extractor': {
       const versionId =
         /manuscript_version_id[^0-9a-f]*([0-9a-f-]{36})/.exec(prompt)?.[1] ?? idFrom(prompt, 0);

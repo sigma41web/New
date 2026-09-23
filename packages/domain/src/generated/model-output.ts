@@ -215,6 +215,73 @@ export interface KnowledgeLeakChecker {
   issues: CheckerIssue[];
 }
 /**
+ * ADR-0060: what the chapter did to each promise it was planned to touch, and the promise findings.
+ *
+ * This interface was referenced by `ModelAnswersWithoutADocumentSchema`'s JSON-Schema
+ * via the `definition` "promise_checker".
+ */
+export interface PromiseChecker {
+  touches: {
+    promise_id: string;
+    /**
+     * The chapter contract's promise touch (setups/payoffs kind).
+     */
+    planned: 'open' | 'advance' | 'pay';
+    found: boolean;
+    /**
+     * A verbatim phrase of the manuscript that carries the touch; empty when found is false.
+     */
+    quote?: string;
+  }[];
+  issues: PromiseIssue[];
+}
+/**
+ * This interface was referenced by `ModelAnswersWithoutADocumentSchema`'s JSON-Schema
+ * via the `definition` "promiseIssue".
+ */
+export interface PromiseIssue {
+  kind: 'promise_forgotten' | 'payoff_without_setup' | 'canon_contradiction' | 'other';
+  severity: 'minor' | 'major' | 'blocking';
+  confidence?: number;
+  claim: string;
+  quote: string;
+  /**
+   * The promise the finding is about.
+   */
+  promise_id?: string;
+  repair?: Repair;
+}
+/**
+ * ADR-0060: repetition findings against the chapter itself and the accepted chapters before it.
+ *
+ * This interface was referenced by `ModelAnswersWithoutADocumentSchema`'s JSON-Schema
+ * via the `definition` "repetition_judge".
+ */
+export interface RepetitionJudge {
+  issues: RepetitionIssue[];
+}
+/**
+ * This interface was referenced by `ModelAnswersWithoutADocumentSchema`'s JSON-Schema
+ * via the `definition` "repetitionIssue".
+ */
+export interface RepetitionIssue {
+  kind:
+    | 'repeated_scene'
+    | 'repeated_paragraph'
+    | 'repetitive_arc'
+    | 'repetitive_sentence_openings'
+    | 'other';
+  severity: 'minor' | 'major' | 'blocking';
+  confidence?: number;
+  claim: string;
+  quote: string;
+  /**
+   * The accepted chapter the passage or beat repeats, when there is one.
+   */
+  earlier_chapter?: number;
+  repair?: Repair;
+}
+/**
  * This interface was referenced by `ModelAnswersWithoutADocumentSchema`'s JSON-Schema
  * via the `definition` "contract_checker".
  */

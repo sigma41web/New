@@ -68,6 +68,7 @@ describe('Korean identity block (ADR-0055)', () => {
     'judge_rubric_prose',
     'judge_rubric_structure',
     'judge_rubric_genre',
+    'judge_rubric_voice',
     'summarizer_min',
   ] as const)('renders the %s block in Korean with no English instructions', (role) => {
     const block = compileBlock(identity, { role, budgetTokens: 6000 });

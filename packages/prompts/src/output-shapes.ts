@@ -78,7 +78,9 @@ export const OUTPUT_SHAPES: Readonly<Record<string, OutputShape>> = {
   factual_summarizer: answer('factual_summarizer'),
   genre_judge: answer('genre_judge'),
   knowledge_leak_checker: answer('knowledge_leak_checker'),
+  promise_checker: answer('promise_checker'),
   prose_judge: answer('prose_judge'),
+  repetition_judge: answer('repetition_judge'),
   requirement_interpreter: {
     schema: 'story-spec.schema.json',
     workflowFilled: ['project_id', 'version'],

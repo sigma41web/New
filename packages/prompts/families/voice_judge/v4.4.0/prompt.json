@@ -1,0 +1,35 @@
+{
+  "family": "voice_judge",
+  "version": "4.4.0",
+  "role": "voice_judge",
+  "purpose": "Korean webnovel evaluator with its own inputs (ADR-0060), 4.4.0.",
+  "style_sensitive": true,
+  "manuscript_producing": false,
+  "identity_variant": "judge_rubric_voice",
+  "model_class": "C",
+  "input_variables": [
+    "chapter_text",
+    "voice_cards",
+    "address_matrix",
+    "register_digests",
+    "register_check_report"
+  ],
+  "output_schema": null,
+  "output_mode": "json",
+  "params": {
+    "temperature": 0.1,
+    "max_tokens": 1500,
+    "top_p": 1
+  },
+  "failure_behavior": {
+    "on_schema_invalid": "repair_then_regenerate",
+    "on_truncation": "fail",
+    "max_attempts": 2
+  },
+  "status": "active",
+  "changelog": "4.4.0 — evaluator inputs (ADR-0060): continuity reads locked facts in their own slot; knowledge-leak reads stances, guards and reader secrets separately; voice has its own rubric, voice cards, address terms and a register report; genre reads a terminology and device report; promise_checker and repetition_judge are new.",
+  "regression_cases": [
+    "voice_judge.fixture.smoke"
+  ],
+  "content_hash": "sha256:b2fb5d590ef296578a122df23db1f15e8e8dcb5b16e331931060262dcc09c313"
+}

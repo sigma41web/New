@@ -1,0 +1,33 @@
+{
+  "family": "repetition_judge",
+  "version": "4.4.0",
+  "role": "repetition_judge",
+  "purpose": "Korean webnovel evaluator with its own inputs (ADR-0060), 4.4.0.",
+  "style_sensitive": false,
+  "manuscript_producing": false,
+  "identity_variant": null,
+  "model_class": "C",
+  "input_variables": [
+    "chapter_text",
+    "repetition_report",
+    "recent_chapters"
+  ],
+  "output_schema": null,
+  "output_mode": "json",
+  "params": {
+    "temperature": 0.1,
+    "max_tokens": 2000,
+    "top_p": 1
+  },
+  "failure_behavior": {
+    "on_schema_invalid": "repair_then_regenerate",
+    "on_truncation": "fail",
+    "max_attempts": 2
+  },
+  "status": "active",
+  "changelog": "4.4.0 — evaluator inputs (ADR-0060): continuity reads locked facts in their own slot; knowledge-leak reads stances, guards and reader secrets separately; voice has its own rubric, voice cards, address terms and a register report; genre reads a terminology and device report; promise_checker and repetition_judge are new.",
+  "regression_cases": [
+    "repetition_judge.fixture.smoke"
+  ],
+  "content_hash": "sha256:6966d5b14c4dbd75f914392df7e2380928b2b75b9c67181290acbffb05745988"
+}

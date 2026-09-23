@@ -29,6 +29,7 @@ export type RoleVariant =
   | 'judge_rubric_prose'
   | 'judge_rubric_structure'
   | 'judge_rubric_genre'
+  | 'judge_rubric_voice'
   | 'summarizer_min';
 
 export interface ParticipantDigest {
@@ -308,6 +309,8 @@ const ROLE_SECTIONS: Record<RoleVariant, readonly string[]> = {
   judge_rubric_prose: ['prose_rubric', 'avoid', 'register', 'terminology', 'naming'],
   judge_rubric_structure: ['structure', 'cadence', 'structure_rubric', 'genres'],
   judge_rubric_genre: ['genres', 'genre_rubric', 'terminology'],
+  // ADR-0060: voice is judged against register rules, the participants' voice cards and naming.
+  judge_rubric_voice: ['register', 'participants', 'naming', 'avoid'],
   summarizer_min: ['naming', 'terminology'],
 };
 

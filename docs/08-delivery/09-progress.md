@@ -3,6 +3,49 @@
 The single place that records implementation status (ADR-0043). Update it in every checkpoint commit.
 Everything else in `docs/` describes design; only this file claims what exists and what has run.
 
+## Workstream 3 — evaluation v2 — 2026-09-23
+
+Branch `hoplite/mende-33d541c8--ws3-evaluators`, stacked on Workstream 1 (`c21c7df`). ADR-0060 records the
+decisions; the Step 0 improvement audit (§3, PR #1) records the findings.
+
+**Built:**
+
+- Prompt families @4.4.0. `continuity_checker` reads the locked facts in their own slot, and the timeline
+  once. `knowledge_leak_checker` reads stances, guards and reader secrets separately. `voice_judge` runs on
+  its own `judge_rubric_voice` block with voice cards, designed address terms and a dialogue register
+  report. `genre_judge` reads a terminology and status-window report. The new families are
+  `promise_checker` and `repetition_judge`; their answer schemas are in `model-output.schema.json`, and
+  every 4.4.0 output shape is schema-generated.
+- Checker packs keep their rendered sections by name (`StoredPack.sections`).
+- `@yeonjae/prose` gains `checkDialogueRegister` (합쇼체/해요체/반말 per utterance; polite-and-반말 mixing
+  inside one quotation) and `repetitionReport` (reuse against earlier accepted chapters, opening and
+  ending similarity, repeated sentence openings).
+- The Production Policy has an `evaluation` block, and `standard.v2` is standard.v1 plus that block.
+  `evaluateVersion` runs evaluators in parallel with findings in a fixed order, runs the optional
+  evaluators, composes gated scores from rubric sub-scores and deterministic composites, and carries
+  findings through a targeted re-evaluation after a patch.
+- `project:create --policy=` pins a shipped policy. New projects still default to `standard.v1`.
+
+**Measured:**
+
+- Korean end-to-end run on `standard.v2` (simulated model). Promise and repetition evaluators ran for
+  both chapters, and evaluator calls overlapped, up to 4 in flight.
+- Chapter 1's forced 번역투 finding led to one revision round. After the patch only `prose_judge` ran
+  again; the other eight sections were carried with `carried_from`, and the prose score rose from the
+  37.5 rubric judgment to the 87.5 one. The patch regression check passed, and both chapters were
+  accepted.
+- `standard.v1` runs, including the English replays, the 120-chapter replay and the contrast set, are
+  unchanged. The contrast baseline was re-pinned to `genre_judge@4.4.0` / `voice_judge@4.4.0`: all 2,000
+  entries are identical, with 700/700 agreement.
+
+**Not done:**
+
+- There is no live-model run.
+- Rubric weights are equal over each judge's output keys, and the thresholds and penalty points are
+  uncalibrated (Workstream 8).
+- New projects do not default to `standard.v2` yet.
+- The web console cannot choose a policy.
+
 ## Workstream 1 — structured-output reliability — 2026-09-23
 
 Branch `hoplite/mende-33d541c8--ws1-structured-output` (base `d357099`). ADR-0057 records the decisions;

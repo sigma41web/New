@@ -16,6 +16,7 @@ describe('cli commands', () => {
       'policy/economy@1',
       'policy/premium@1',
       'policy/standard@1',
+      'policy/standard@2',
     ]);
   });
 
@@ -52,8 +53,8 @@ describe('cli commands', () => {
     // 31 English lineage versions + 25 Korean v2.0.0–v2.2.5 (8 each, ADR-0054) + 25 fully Korean v3.0.0
     // (ADR-0055) + 25 Korean webnovel craft v4.0.0, the arc_planner/targeted_reviser v4.0.1 fixes, nine
     // v4.1.0 first-live-chapter versions and three v4.2.0 writer/planner versions (ADR-0056), and the two
-    // schema-generated v4.3.0 output shapes (ADR-0057).
-    expect((p.output as { versions: unknown[] }).versions).toHaveLength(297);
+    // schema-generated v4.3.0 output shapes (ADR-0057), and six v4.4.0 evaluator versions (ADR-0060).
+    expect((p.output as { versions: unknown[] }).versions).toHaveLength(303);
   });
 
   it('compiles the Active Constraint Set for a chapter and fails on overflow', () => {

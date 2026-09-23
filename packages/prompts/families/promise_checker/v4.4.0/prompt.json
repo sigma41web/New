@@ -1,0 +1,33 @@
+{
+  "family": "promise_checker",
+  "version": "4.4.0",
+  "role": "promise_checker",
+  "purpose": "Korean webnovel evaluator with its own inputs (ADR-0060), 4.4.0.",
+  "style_sensitive": false,
+  "manuscript_producing": false,
+  "identity_variant": null,
+  "model_class": "M",
+  "input_variables": [
+    "chapter_text",
+    "chapter_obligations",
+    "promise_ledger"
+  ],
+  "output_schema": null,
+  "output_mode": "json",
+  "params": {
+    "temperature": 0.1,
+    "max_tokens": 2500,
+    "top_p": 1
+  },
+  "failure_behavior": {
+    "on_schema_invalid": "repair_then_regenerate",
+    "on_truncation": "fail",
+    "max_attempts": 2
+  },
+  "status": "active",
+  "changelog": "4.4.0 — evaluator inputs (ADR-0060): continuity reads locked facts in their own slot; knowledge-leak reads stances, guards and reader secrets separately; voice has its own rubric, voice cards, address terms and a register report; genre reads a terminology and device report; promise_checker and repetition_judge are new.",
+  "regression_cases": [
+    "promise_checker.fixture.smoke"
+  ],
+  "content_hash": "sha256:21bd8712e99a64caa8b3d2bddde3691a17ba9a0d6b9ef6541d76e86534bc5082"
+}

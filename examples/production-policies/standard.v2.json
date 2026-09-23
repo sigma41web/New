@@ -1,0 +1,162 @@
+{
+  "id": "policy/standard",
+  "version": 2,
+  "quality_tier": "standard",
+  "name": "Standard tier production policy v2 (starting values; evaluation v2, ADR-0060)",
+  "content_hash": "sha256:298f696235c3191f8c07a66995db331fa0db1e20fbc70f7299dce2f842026494",
+  "revision": {
+    "max_rounds": 3,
+    "max_patches_per_round": 6,
+    "max_scene_rewrites": 2,
+    "per_span_attempts": 2,
+    "smoke_after_patches": 3,
+    "regression_tolerance_points": 3
+  },
+  "evaluation": {
+    "max_parallel_evaluators": 4,
+    "optional_evaluators": [
+      "promise_checker",
+      "repetition_judge"
+    ],
+    "score_model": "rubric_subscores",
+    "reevaluation": "targeted",
+    "lint_penalty_points": {
+      "minor": 4,
+      "major": 15,
+      "blocking": 40
+    }
+  },
+  "candidates": {
+    "chapter_candidates": 1,
+    "concept_candidates": 2,
+    "arc_candidates": 2,
+    "early_stop_margin_points": 6,
+    "judge_families_differ_from_writer": true,
+    "tie_fallback_ladder_authorized": true,
+    "selection_schedule": "stable_slot_single_elimination"
+  },
+  "gates": {
+    "dimensions": {
+      "prose": {
+        "min_score": 78,
+        "judge_weight": 0.6
+      },
+      "structure": {
+        "min_score": 78,
+        "judge_weight": 0.65
+      },
+      "genre": {
+        "min_score": 72,
+        "judge_weight": 0.8
+      },
+      "voice": {
+        "min_score": 76,
+        "judge_weight": 0.7
+      }
+    },
+    "blocking_max": 0,
+    "major_max": 0,
+    "judge_confidence_caps": {
+      "minor_below": 0.5,
+      "note_below": 0.3
+    },
+    "drift_flag_scene_repair_ratio": 0.3,
+    "drift_flag_min_confidence": 0.7,
+    "chapter_regenerate_ratio": 0.4
+  },
+  "context": {
+    "previous_tail_words": 400,
+    "previous_tail_floor_words": 250,
+    "previous_tail_extend_to_scene_below_words": 600,
+    "active_constraints_cap_tokens": 1200,
+    "writer_input_budget_tokens": 24000,
+    "l1_summary_max_words": 120,
+    "input_budget_tokens": {
+      "pack.chapter_planner": 14000,
+      "pack.continuity_checker": 20000,
+      "pack.extractor": 18000
+    }
+  },
+  "extraction": {
+    "passes": 2,
+    "single_source_min_confidence": 0.8,
+    "fuzzy_anchor_min_ratio": 0.98,
+    "major_unresolved_blocks_commit": true,
+    "adjudicate_conflicts": true
+  },
+  "output_language": {
+    "language": "en",
+    "min_english_confidence": 0.99,
+    "regenerate_once_then_reroute": true
+  },
+  "length": {
+    "warn_tolerance_ratio": 0.12,
+    "fail_tolerance_ratio": 0.2
+  },
+  "override_matrix": {
+    "never": [
+      "non_english_output",
+      "truncated_output",
+      "invalid_structured_output",
+      "format_drift",
+      "content_restriction",
+      "evidence_integrity",
+      "partial_commit",
+      "stale_canon",
+      "frame_error",
+      "knowledge_leak"
+    ],
+    "canon_workflow": [
+      "canon_contradiction",
+      "timeline_error",
+      "requirement_violation",
+      "forbidden_development"
+    ],
+    "reviewer": [
+      "register_error",
+      "address_term_error",
+      "voice_drift",
+      "western_novel_drift",
+      "serial_drift",
+      "literary_drift",
+      "translation_like_english",
+      "weak_ending",
+      "weak_pacing",
+      "late_hook",
+      "excessive_exposition",
+      "repeated_paragraph",
+      "repeated_scene",
+      "repetitive_arc",
+      "payoff_without_setup",
+      "promise_forgotten",
+      "length_out_of_range",
+      "numeric_inconsistency",
+      "unapproved_untranslated_term",
+      "terminology_violation",
+      "naming_registry_violation",
+      "relationship_inconsistency",
+      "character_inconsistency",
+      "injury_forgotten",
+      "inventory_impossible",
+      "resource_impossible",
+      "rank_incorrect",
+      "location_error",
+      "power_rule_violation",
+      "world_rule_violation",
+      "knowledge_ignorance",
+      "reader_knowledge_violation",
+      "missing_required_event",
+      "paragraph_length",
+      "repetitive_sentence_openings",
+      "dialogue_tag_overuse",
+      "english_grammar",
+      "spelling_locale_inconsistency",
+      "other"
+    ],
+    "project_escalations": []
+  },
+  "calibration": {
+    "status": "uncalibrated",
+    "notes": "standard.v1 with the ADR-0060 evaluation block: evaluators run four at a time, promise_checker and repetition_judge join the core seven, gated dimensions are composed from the judges' 1-5 rubric sub-scores and deterministic composites by judge_weight, and re-evaluation after a patch is targeted. Every threshold, weight and limit is standard.v1's; all remain uncalibrated until the contrast-set calibration round (ADR-0029)."
+  }
+}

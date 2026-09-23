@@ -262,10 +262,24 @@ export async function runDb(argv: readonly string[]): Promise<AsyncCommandResult
         if (!title) return { ok: false, output: USAGE };
         // `--workspace=<id>` places the project in an existing workspace (the one `user:create` made), so
         // the web console's signed-in operator can see it; without it a fresh local workspace is created.
+        // `--policy=<ref>` pins a shipped Production Policy, e.g. policy/standard@2 (ADR-0060 evaluation).
+        const policy = flags.find((f) => f.startsWith('--policy='))?.slice('--policy='.length);
+        if (policy !== undefined && !loadPolicies().has(policy as PolicyRef))
+          return {
+            ok: false,
+            output: {
+              error: 'POLICY_UNKNOWN',
+              detail: `${policy}; known: ${[...loadPolicies().keys()].join(', ')}`,
+            },
+          };
         const ws =
           flags.find((f) => f.startsWith('--workspace='))?.slice('--workspace='.length) ??
           (await createWorkspace(pool, 'local'));
-        const p = await createProject(pool, { workspaceId: ws, title });
+        const p = await createProject(pool, {
+          workspaceId: ws,
+          title,
+          ...(policy !== undefined ? { policyVersion: policy } : {}),
+        });
         return { ok: true, output: { workspace_id: ws, ...p } };
       }
       case 'entity:create': {
@@ -1572,7 +1586,9 @@ export const USAGE = `yeonjae <command> [args]
 
 Database commands (DATABASE_URL required):
   db:migrate                                   apply forward-only migrations
-  project:create <title> [--workspace=<id>]    create a project (+ main timeline) in a workspace (new one unless given)
+  project:create <title> [--workspace=<id>] [--policy=<ref>]
+                                               create a project (+ main timeline) in a workspace (new one unless given);
+                                               --policy pins a shipped policy, e.g. policy/standard@2
   entity:create <project> <type> <name>        add a bible entity
   manuscript:import <project> <chapter#> <file> store an immutable working version (NFC, measured)
   manuscript:approve <version>                 approval-lock a working version (gate outcome)
