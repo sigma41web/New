@@ -269,11 +269,11 @@ export async function createManuscriptVersion(
   const contentHash = `sha256:${createHash('sha256').update(nfc.text, 'utf8').digest('hex')}`;
   const r = await db
     .query<ManuscriptVersionRow>(
-      `INSERT INTO manuscript_versions (workspace_id, project_id, chapter_id, version_no, origin, text, length, content_hash, parent_version_id, created_by_job_id)
+      `INSERT INTO manuscript_versions (workspace_id, project_id, chapter_id, version_no, origin, text, length, content_hash, parent_version_id, created_by_job_id, language)
        VALUES ($1, $2, $3,
                (SELECT coalesce(max(v), 0) + 1 FROM (SELECT version_no AS v FROM manuscript_versions WHERE chapter_id = $3
                                                     UNION ALL SELECT version_no FROM quarantine_versions WHERE chapter_id = $3) x),
-               $4, $5, $6, $7, $8, $9)
+               $4, $5, $6, $7, $8, $9, (SELECT output_language FROM projects WHERE id = $2))
        RETURNING *`,
       [
         input.workspaceId,

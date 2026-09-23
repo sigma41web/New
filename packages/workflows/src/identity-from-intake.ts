@@ -191,10 +191,13 @@ export async function ensureProjectIdentity(
   }
   const versionId = uuidFromKey(`${input.projectId}:narrative_identity:${doc.version}`);
   await pool.query(
-    'UPDATE projects SET settings = settings || $2::jsonb, updated_at = now() WHERE id = $1',
+    // The manuscript language is project data (ADR-0054 §5): manuscript versions, summaries and search
+    // documents take it from here.
+    'UPDATE projects SET settings = settings || $2::jsonb, output_language = $3, updated_at = now() WHERE id = $1',
     [
       input.projectId,
       JSON.stringify({ narrative_identity_ref: ref, narrative_identity_version_id: versionId }),
+      input.intake.manuscript_language === 'ko' ? 'ko' : 'en',
     ],
   );
   addProfile(store, doc.payload as unknown as NarrativeProfile);

@@ -56,7 +56,8 @@ export function keywordPhrase(text: string): string {
     .replace(/[“”"()[\]{}:;,.!?—–]/g, ' ')
     .split(/\s+/)
     .map((w) => w.replace(/^['’]+|['’]+$/g, ''))
-    .filter((w) => w.length > 2 && !STOP.has(w.toLowerCase()));
+    // Two-syllable Hangul words carry content (레온, 결투, 마탑); two Latin letters rarely do (ADR-0058).
+    .filter((w) => (w.length > 2 || /^[가-힣]{2}$/u.test(w)) && !STOP.has(w.toLowerCase()));
   const seen = new Set<string>();
   const out: string[] = [];
   for (const w of words) {

@@ -63,6 +63,7 @@
 | [0055](0055-fully-korean-prompt-surface.md) | A Korean project's whole prompt surface is Korean: identity block, Korean-authored layers, context packs, Active Constraint Set and v3 prompt families |
 
 | [0056](0056-korean-webnovel-craft-engine.md) | Korean webnovel craft engine: v3 craft layers with studio exemplars, one source for forbidden diction driving a deterministic style lint, a prose-only scene writer with explicit episode position, v4 prompt families, multi-round Korean revision and the Notion bridge provider mode |
+| [0058](0058-korean-lexical-retrieval.md) | Korean lexical retrieval: pg_trgm with particle-stripped stems and registry alias expansion, manuscript language stored on Korean rows, two-syllable Hangul names tagged; English FTS unchanged |
 
 New ADRs: copy `0000-adr-template.md`, take the next number, link it here, and update the traceability
 matrix in the same change.

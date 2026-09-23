@@ -11,6 +11,7 @@ import { type Client, type Pool, rethrowCanon, withTransaction } from './client.
 import { type StoryClock } from '@yeonjae/domain';
 import { toNfcText } from '@yeonjae/prose';
 import { createHash } from 'node:crypto';
+import { containsPattern, koreanQueryTerms } from './korean-query.js';
 import { type FactRow, type KnowledgeRow, type ManuscriptVersionRow } from './repo.js';
 
 type Queryable = Pool | Client;
@@ -129,8 +130,8 @@ export async function upsertL1Summary(
     .digest('hex')}`;
   const r = await db
     .query<SummaryRow>(
-      `INSERT INTO summaries (workspace_id, project_id, tier, scope_kind, chapter_from, chapter_to, manuscript_version_id, text, ending_hook, canon_version, prompt_version_id, content_hash)
-       VALUES ($1, $2, 'L1', 'chapter', $3, $3, $4, $5, $6, $7, $8, $9)
+      `INSERT INTO summaries (workspace_id, project_id, tier, scope_kind, chapter_from, chapter_to, manuscript_version_id, text, ending_hook, canon_version, prompt_version_id, content_hash, language)
+       VALUES ($1, $2, 'L1', 'chapter', $3, $3, $4, $5, $6, $7, $8, $9, (SELECT output_language FROM projects WHERE id = $2))
        ON CONFLICT (manuscript_version_id) WHERE tier = 'L1'
        DO UPDATE SET text = EXCLUDED.text, ending_hook = EXCLUDED.ending_hook, canon_version = EXCLUDED.canon_version,
                      prompt_version_id = EXCLUDED.prompt_version_id, content_hash = EXCLUDED.content_hash
@@ -206,6 +207,11 @@ export interface LexicalQuery {
   /** English query text; words are OR-ed for recall (`mode: 'any'`, default) or AND-ed (`mode: 'all'`). */
   readonly query: string;
   readonly mode?: 'any' | 'all' | undefined;
+  /**
+   * The project's manuscript language. `ko` searches Korean documents by particle-stripped stems over the
+   * trigram index, with registry aliases expanded (ADR-0058); `en` (default) uses English full-text search.
+   */
+  readonly language?: 'en' | 'ko' | undefined;
   readonly timelineId?: string | undefined;
   readonly entityIds?: readonly string[] | undefined;
   readonly chapterMax?: number | undefined;
@@ -218,6 +224,7 @@ export interface LexicalQuery {
  * chapter upper bound (never read the future), kinds. Ordering is total: rank desc, chapter asc, id asc.
  */
 export async function lexicalSearch(db: Queryable, q: LexicalQuery): Promise<SearchHit[]> {
+  if (q.language === 'ko') return koreanLexicalSearch(db, q);
   const words = q.query
     .split(/\s+/)
     .map((w) => w.replace(/["'’“”()]/g, ''))
@@ -247,6 +254,71 @@ export async function lexicalSearch(db: Queryable, q: LexicalQuery): Promise<Sea
     `SELECT d.id, d.kind, d.ref_kind, d.ref_id, d.ref_key, d.chapter_no, d.clock_ord, d.timeline_id, d.entity_ids, d.importance,
             d.text, d.manuscript_version_id, d.canon_version_added,
             ts_rank_cd(d.tsv, websearch_to_tsquery('english', $2))::float8 AS rank
+       FROM search_documents d
+      WHERE ${where.join(' AND ')}
+      ORDER BY rank DESC, d.chapter_no ASC NULLS LAST, d.id ASC
+      LIMIT $${params.length}`,
+    params,
+  );
+  return r.rows;
+}
+
+/** Weight of a registry surface reached through an alias of a query term (the term itself weighs 1). */
+const ALIAS_WEIGHT = 0.8;
+const MAX_KOREAN_TERMS = 16;
+
+/**
+ * Korean search (ADR-0058): each query word is reduced to its stem (one particle or ending removed), stems
+ * that name a registry entity bring the entity's other surfaces (display name, short forms, aliases), and a
+ * document matches when it contains any term. Rank = weighted term hits, then word similarity, then chapter
+ * and id, so the order is total and replays are stable. Backed by the Korean-only trigram index.
+ */
+async function koreanLexicalSearch(db: Queryable, q: LexicalQuery): Promise<SearchHit[]> {
+  const stems = koreanQueryTerms(q.query);
+  if (stems.length === 0) return [];
+  const weights = new Map<string, number>(stems.map((s) => [s, 1]));
+  const registry = await db.query<{ surfaces: string[] }>(
+    `SELECT ARRAY[e.display_name] || e.short_forms || e.aliases AS surfaces
+       FROM entities e
+      WHERE e.project_id = $1 AND e.status = 'active'
+        AND (ARRAY[e.display_name] || e.short_forms || e.aliases) && $2::text[]
+      ORDER BY e.id`,
+    [q.projectId, stems],
+  );
+  for (const row of registry.rows)
+    for (const s of row.surfaces)
+      if (s.length >= 2 && !weights.has(s) && weights.size < MAX_KOREAN_TERMS)
+        weights.set(s, ALIAS_WEIGHT);
+  const terms = [...weights.keys()];
+  const params: unknown[] = [
+    q.projectId,
+    terms,
+    terms.map(containsPattern),
+    terms.map((t) => weights.get(t) ?? 1),
+  ];
+  const where: string[] = ['d.project_id = $1', `d.language = 'ko'`, 'd.text LIKE ANY($3::text[])'];
+  if (q.timelineId) {
+    params.push(q.timelineId);
+    where.push(`(d.timeline_id = $${params.length} OR d.timeline_id IS NULL)`);
+  }
+  if (q.entityIds && q.entityIds.length > 0) {
+    params.push([...q.entityIds]);
+    where.push(`d.entity_ids && $${params.length}::uuid[]`);
+  }
+  if (q.chapterMax !== undefined) {
+    params.push(q.chapterMax);
+    where.push(`(d.chapter_no IS NULL OR d.chapter_no <= $${params.length})`);
+  }
+  if (q.kinds && q.kinds.length > 0) {
+    params.push([...q.kinds]);
+    where.push(`d.kind = ANY($${params.length}::text[])`);
+  }
+  params.push(q.limit ?? 40);
+  const r = await db.query<SearchHit>(
+    `SELECT d.id, d.kind, d.ref_kind, d.ref_id, d.ref_key, d.chapter_no, d.clock_ord, d.timeline_id, d.entity_ids, d.importance,
+            d.text, d.manuscript_version_id, d.canon_version_added,
+            (SELECT sum(u.w * (CASE WHEN d.text LIKE u.p THEN 1 ELSE 0 END) + 0.001 * word_similarity(u.t, d.text))
+               FROM unnest($2::text[], $3::text[], $4::float8[]) AS u(t, p, w))::float8 AS rank
        FROM search_documents d
       WHERE ${where.join(' AND ')}
       ORDER BY rank DESC, d.chapter_no ASC NULLS LAST, d.id ASC

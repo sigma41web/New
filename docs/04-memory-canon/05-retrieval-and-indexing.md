@@ -40,6 +40,13 @@ aliases/short forms expand at query time ("Do-yoon" ↔ "Kang Do-yoon"; "the com
 Native-script names (if stored) are indexed as aliases for inspector search only, never for manuscript
 generation.
 
+**Korean projects (ADR-0058).** Korean attaches particles and endings to the word, so a whitespace/`english`
+tokenizer indexes every eojeol whole (레온은, 레온을, 레온의 are three tokens). Korean documents are stored with
+`language = 'ko'` (derived from the manuscript version or project) and indexed by a partial `pg_trgm` GIN
+index. A Korean query is reduced to stems (one trailing particle or ending removed while two syllables
+remain), stems that equal a registry surface expand to the entity's other surfaces, and documents rank by
+weighted term hits, then word similarity, then chapter and id. Two-syllable Hangul names are entity-tagged.
+
 ## 4. Embeddings (ADR-0035)
 
 Provider-independent embedding role (`embedder`). Because dimension and semantics differ across
@@ -62,6 +69,10 @@ For the fixture story (`docs/07-quality/02-fixture-story.md`), the suite defines
 contract at chapter 41 referencing Mu-jin's permanent limp (established ch.9/ch.14), the pack must include
 the ch.9 injury fact + evidence; for the reveal in ch.58, the pack must include the `lie` event from ch.23
 and the `believes_false` row. Recall@pack ≥ 0.95 for `core` items; ≥ 0.85 for `major`.
+
+Korean retrieval has its own fixture (`packages/db/src/testdata/ko-retrieval.json`, an original
+studio-written serial, 26 query → paragraph pairs); CI asserts recall@5 ≥ 0.95 through the real indexing
+path and that the Korean path beats English FTS on the same documents (ADR-0058).
 
 ## 7. Failure modes
 

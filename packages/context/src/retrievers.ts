@@ -47,13 +47,20 @@ export interface VectorRetriever {
 }
 
 export class PgLexicalRetriever implements LexicalRetriever {
-  readonly name = 'postgres_fts_english';
-  constructor(private readonly db: Pool | Client) {}
+  readonly name: string;
+  /** `ko` projects search Korean documents with the trigram path (ADR-0058); `en` keeps English FTS. */
+  constructor(
+    private readonly db: Pool | Client,
+    private readonly language: 'en' | 'ko' = 'en',
+  ) {
+    this.name = language === 'ko' ? 'postgres_trgm_korean' : 'postgres_fts_english';
+  }
 
   async search(q: RetrievalQuery): Promise<RetrievedCandidate[]> {
     const hits = await lexicalSearch(this.db, {
       projectId: q.projectId,
       query: q.text,
+      language: this.language,
       timelineId: q.timelineId,
       chapterMax: q.chapterMax,
       limit: q.limit,

@@ -3,6 +3,30 @@
 The single place that records implementation status (ADR-0043). Update it in every checkpoint commit.
 Everything else in `docs/` describes design; only this file claims what exists and what has run.
 
+## Workstream 2a — Korean lexical retrieval — 2026-09-23
+
+Branch `hoplite/mende-33d541c8--ws2-korean-retrieval` (base `d357099`). ADR-0058 records the decisions; the
+Step 0 improvement audit (§2.1–2.3, §2.7, PR #1) the findings.
+
+**Built:**
+
+- Migration 0021: `pg_trgm`; a trigger that stores each search document's language from its manuscript
+  version or project; a partial trigram GIN index on Korean documents; `canon.entities_mentioned` tags
+  two-syllable Hangul names; backfills for projects whose pinned identity is Korean.
+- Korean rows are stored as Korean: the identity step sets `projects.output_language`; manuscript versions
+  and L1 summaries take the project's language (before this, every Korean row kept the `'en'` default).
+- `lexicalSearch({ language: 'ko' })`: particle-stripped stems (`koreanQueryTerms`), registry alias
+  expansion, weighted hits + word similarity, total order. `PgLexicalRetriever` takes the project language
+  (`postgres_trgm_korean`); the query plan keeps two-syllable Hangul words.
+- Korean retrieval fixture: an original 8-chapter serial, 26 queries, asserted in CI through the real
+  acceptance-indexing path.
+
+**Measured (PostgreSQL 16.14, no live provider):** recall@5 on the fixture — English FTS over the Korean
+documents 0.77 (20/26), Korean path 1.00 (26/26).
+
+**Not done:** a real multilingual embedding provider (WS2.7) — no credentials to measure one, and the
+fixture saturates at recall@5 = 1.00, so hybrid mode stays off for Korean.
+
 ## Checkpoint K2 — Korean webnovel craft engine + live Notion run — 2026-09-23
 
 Branch `hoplite/epidamnos-dyrrhachion-8a8e00dd` (base `2e1f764`). ADR-0056 records the decisions.

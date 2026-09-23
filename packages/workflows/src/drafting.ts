@@ -106,7 +106,10 @@ export async function buildRolePack(
       promptSetId: ctx.pins.promptSetId,
       chapterText: input.chapterText,
       jobId: ctx.job.id,
-      lexical: input.lexical === false ? undefined : new PgLexicalRetriever(ctx.pool),
+      lexical:
+        input.lexical === false
+          ? undefined
+          : new PgLexicalRetriever(ctx.pool, ctx.identity.outputLanguage.language ?? 'en'),
       persist: true,
     });
     return { pack, ref: packRef(pack, stored), stored: storedPack(pack) };
