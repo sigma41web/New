@@ -536,11 +536,104 @@ export async function promisesForChapter(
         AND (p.id = ANY($4::uuid[])
              OR (p.status IN ('open','advanced')
                  AND (p.related_entity_ids && $3::uuid[]
-                      OR (p.due_min_chapter IS NOT NULL AND p.due_min_chapter <= $2::int + $5::int AND coalesce(p.due_max_chapter, 2147483647) >= $2::int - $5::int))))
+                      OR (p.due_min_chapter IS NOT NULL AND p.due_min_chapter <= $2::int + $5::int AND coalesce(p.due_max_chapter, 2147483647) >= $2::int - $5::int)
+                      -- ADR-0061: an overdue open promise is always visible, whoever is on page.
+                      OR (p.due_max_chapter IS NOT NULL AND p.due_max_chapter < $2::int))))
       ORDER BY p.id`,
     [q.projectId, q.chapterNo, [...q.entityIds], [...q.explicitIds], q.window],
   );
   return r.rows;
+}
+
+/** One accepted chapter's L1 summary, for the story-so-far digest (ADR-0061). */
+export interface AcceptedSummaryRow {
+  readonly chapter_no: number;
+  readonly summary_id: string;
+  readonly text: string;
+}
+
+/**
+ * The L1 summaries of every accepted chapter before `beforeChapter`, oldest first. Only the accepted
+ * version of each chapter is read; a chapter without an accepted version is simply absent.
+ */
+export async function acceptedSummariesBefore(
+  db: Queryable,
+  projectId: string,
+  beforeChapter: number,
+): Promise<AcceptedSummaryRow[]> {
+  const r = await db.query<AcceptedSummaryRow>(
+    `SELECT c.number AS chapter_no, s.id AS summary_id, s.text
+       FROM chapters c
+       JOIN manuscript_versions mv ON mv.id = c.accepted_version_id AND mv.status = 'accepted'
+       JOIN summaries s ON s.manuscript_version_id = mv.id AND s.tier = 'L1'
+      WHERE c.project_id = $1 AND c.status = 'accepted' AND c.number < $2
+      ORDER BY c.number`,
+    [projectId, beforeChapter],
+  );
+  return r.rows;
+}
+
+/** The first accepted chapter in which two characters appear in the same canonical event (ADR-0061). */
+export interface FirstMeetingRow {
+  readonly a: string;
+  readonly b: string;
+  readonly chapter_no: number | null;
+  readonly event_id: string | null;
+  /** The pair has a canon relationship on the timeline (they may know each other from before chapter 1). */
+  readonly related: boolean;
+}
+
+/**
+ * For every pair of `entityIds`, the earliest chapter (and event) in which both take part in a canonical,
+ * unretracted event asserted at or before `asOfVersion` on `timelineId`. A pair that never met has
+ * `chapter_no` null — the writer must not let them greet each other by name before an introduction.
+ */
+export async function firstMeetings(
+  db: Queryable,
+  q: {
+    projectId: string;
+    timelineId: string;
+    entityIds: readonly string[];
+    asOfVersion: number;
+  },
+): Promise<FirstMeetingRow[]> {
+  const ids = [...new Set(q.entityIds)].sort();
+  if (ids.length < 2) return [];
+  const r = await db.query<{ a: string; b: string; chapter_no: number; event_id: string }>(
+    `SELECT DISTINCT ON (a.entity_id, b.entity_id)
+            a.entity_id AS a, b.entity_id AS b, c.number AS chapter_no, e.id AS event_id
+       FROM events e
+       JOIN chapters c ON c.id = e.source_chapter_id
+       JOIN event_participants a ON a.event_id = e.id AND a.entity_id = ANY($3::uuid[])
+       JOIN event_participants b ON b.event_id = e.id AND b.entity_id = ANY($3::uuid[]) AND b.entity_id > a.entity_id
+      WHERE e.project_id = $1 AND e.timeline_id = $2 AND e.frame = 'canonical'
+        AND e.asserted_at_version <= $4 AND (e.retracted_at_version IS NULL OR e.retracted_at_version > $4)
+      ORDER BY a.entity_id, b.entity_id, c.number, e.clock_ord, e.id`,
+    [q.projectId, q.timelineId, ids, q.asOfVersion],
+  );
+  const met = new Map(r.rows.map((row) => [`${row.a}|${row.b}`, row]));
+  const rel = await db.query<{ a: string; b: string }>(
+    `SELECT DISTINCT least(from_entity_id, to_entity_id) AS a, greatest(from_entity_id, to_entity_id) AS b
+       FROM relationship_states
+      WHERE project_id = $1 AND timeline_id = $2
+        AND from_entity_id = ANY($3::uuid[]) AND to_entity_id = ANY($3::uuid[])
+        AND asserted_at_version <= $4 AND (retracted_at_version IS NULL OR retracted_at_version > $4)`,
+    [q.projectId, q.timelineId, ids, q.asOfVersion],
+  );
+  const related = new Set(rel.rows.map((row) => `${row.a}|${row.b}`));
+  const out: FirstMeetingRow[] = [];
+  for (const [i, a] of ids.entries())
+    for (const b of ids.slice(i + 1)) {
+      const row = met.get(`${a}|${b}`);
+      out.push({
+        a,
+        b,
+        chapter_no: row?.chapter_no ?? null,
+        event_id: row?.event_id ?? null,
+        related: related.has(`${a}|${b}`),
+      });
+    }
+  return out;
 }
 
 export interface EventRow {

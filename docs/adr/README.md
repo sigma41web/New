@@ -65,6 +65,7 @@
 | [0056](0056-korean-webnovel-craft-engine.md) | Korean webnovel craft engine: v3 craft layers with studio exemplars, one source for forbidden diction driving a deterministic style lint, a prose-only scene writer with explicit episode position, v4 prompt families, multi-round Korean revision and the Notion bridge provider mode |
 | [0057](0057-schema-generated-output-shapes.md) | Output shapes come from schemas: answer schemas for every JSON role, CI validation of every active prompt's shape, schema-generated examples, native structured output as a route capability, counted output normalizers and safe model-written patterns |
 | [0060](0060-evaluation-v2.md) | Evaluation v2: every evaluator reads its own pack sections and inputs, promise_checker and repetition_judge, a Production Policy evaluation block (parallel evaluators, rubric-composed gates, targeted re-evaluation) and `standard.v2` |
+| [0061](0061-long-story-memory.md) | Long-story memory: story-so-far digest of accepted L1 summaries, first-meeting ledger, overdue promises always visible, arcs chained from the accepted ending, deterministic series audit |
 
 New ADRs: copy `0000-adr-template.md`, take the next number, link it here, and update the traceability
 matrix in the same change.

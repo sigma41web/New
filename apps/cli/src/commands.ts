@@ -84,6 +84,7 @@ import {
 } from '@yeonjae/context';
 import { loadPolicies as loadPolicyMap, type PolicyRef } from '@yeonjae/domain';
 import {
+  auditSeries,
   exportAccepted,
   ExportRefusedError,
   prepareExport,
@@ -281,6 +282,21 @@ export async function runDb(argv: readonly string[]): Promise<AsyncCommandResult
           ...(policy !== undefined ? { policyVersion: policy } : {}),
         });
         return { ok: true, output: { workspace_id: ws, ...p } };
+      }
+      case 'series:audit': {
+        // ADR-0061: deterministic whole-serial audit (overdue promises, absent characters, story-time
+        // regressions, repeated openings). Reads accepted canon only and blocks nothing.
+        const [projectId, ...flags] = rest;
+        if (!projectId) return { ok: false, output: USAGE };
+        const absent = flags.find((f) => f.startsWith('--absent-after='));
+        return {
+          ok: true,
+          output: await auditSeries(pool, projectId, {
+            ...(absent
+              ? { absentAfterChapters: Number(absent.slice('--absent-after='.length)) }
+              : {}),
+          }),
+        };
       }
       case 'entity:create': {
         const [projectId, type, displayName] = rest;
@@ -1422,6 +1438,7 @@ export const DB_COMMANDS = new Set([
   ...NOVEL_COMMANDS,
   'db:migrate',
   'project:create',
+  'series:audit',
   'entity:create',
   'manuscript:import',
   'manuscript:approve',
@@ -1589,6 +1606,8 @@ Database commands (DATABASE_URL required):
   project:create <title> [--workspace=<id>] [--policy=<ref>]
                                                create a project (+ main timeline) in a workspace (new one unless given);
                                                --policy pins a shipped policy, e.g. policy/standard@2
+  series:audit <project> [--absent-after=<n>]  whole-serial audit: overdue promises, absent characters,
+                                               story-time regressions, repeated openings (accepted canon only)
   entity:create <project> <type> <name>        add a bible entity
   manuscript:import <project> <chapter#> <file> store an immutable working version (NFC, measured)
   manuscript:approve <version>                 approval-lock a working version (gate outcome)

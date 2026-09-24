@@ -17,6 +17,8 @@ import {
   knowledgeOfKnowerAt,
   l1SummaryFor,
   promisesForChapter,
+  acceptedSummariesBefore,
+  firstMeetings,
   propositionsById,
   propositionsTouching,
   relationshipAt,
@@ -502,11 +504,21 @@ async function fetchPromises(ctx: Ctx, out: Item[]): Promise<void> {
         : `; last ${p.last_event_kind}${p.last_event_chapter ? ` in ch.${p.last_event_chapter}` : ''}`
       : '';
     const touch = touches.get(p.id);
+    // ADR-0061: an overdue promise says so, in chapters, wherever it appears.
+    const overdue =
+      p.due_max_chapter !== null && p.due_max_chapter < k && p.status !== 'paid'
+        ? ko
+          ? ` — 회수 기한 ${k - p.due_max_chapter}화 초과`
+          : ` — OVERDUE by ${k - p.due_max_chapter} chapter${k - p.due_max_chapter === 1 ? '' : 's'}`
+        : '';
     const text = ko
-      ? `“${p.statement}” — ${p.type}, ${p.importance}, 상태 ${p.status}${due}${last}${p.resolution_hint ? `; 힌트: ${p.resolution_hint}` : ''}${touch ? ` — 이번 회차 PLANNED: ${touch}` : ''}`
-      : `“${p.statement}” — ${p.type}, ${p.importance}, status ${p.status}${due}${last}${p.resolution_hint ? `; hint: ${p.resolution_hint}` : ''}${touch ? ` — PLANNED in this chapter: ${touch}` : ''}`;
-    const urgency =
-      p.due_max_chapter !== null ? Math.max(0, Math.min(1, 1 - (p.due_max_chapter - k) / 10)) : 0.3;
+      ? `“${p.statement}” — ${p.type}, ${p.importance}, 상태 ${p.status}${due}${last}${p.resolution_hint ? `; 힌트: ${p.resolution_hint}` : ''}${touch ? ` — 이번 회차 PLANNED: ${touch}` : ''}${overdue}`
+      : `“${p.statement}” — ${p.type}, ${p.importance}, status ${p.status}${due}${last}${p.resolution_hint ? `; hint: ${p.resolution_hint}` : ''}${touch ? ` — PLANNED in this chapter: ${touch}` : ''}${overdue}`;
+    const urgency = overdue
+      ? 1
+      : p.due_max_chapter !== null
+        ? Math.max(0, Math.min(1, 1 - (p.due_max_chapter - k) / 10))
+        : 0.3;
     out.push({
       kind: 'promise',
       id: `promise:${p.id}`,
@@ -585,6 +597,112 @@ async function fetchEvents(ctx: Ctx, out: Item[]): Promise<Set<string>> {
     });
   }
   return seen;
+}
+
+/** A template section by exact name and kind: these ADR-0061 sections never fall back to another section. */
+function namedSection(
+  t: PackTemplate,
+  name: string,
+  kind: ItemKind,
+): { name: string; tier: Tier } | undefined {
+  const spec = t.sections.find((s) => s.name === name && s.kinds.includes(kind));
+  return spec ? { name: spec.name, tier: spec.tier } : undefined;
+}
+
+/** Chapters per story-so-far block. */
+const DIGEST_BLOCK = 10;
+
+/**
+ * The story so far (ADR-0061): the L1 summaries of every accepted chapter before the previous one, in blocks
+ * of ten chapters, newest block ranked first so a tight budget sheds the oldest. Deterministic: a digest of
+ * accepted summaries, never a model call and never a draft.
+ */
+async function fetchStorySoFar(ctx: Ctx, out: Item[]): Promise<void> {
+  const sec = namedSection(ctx.template, 'story_so_far', 'summary');
+  const prev = ctx.plan.previousChapterNo;
+  if (!sec || prev === undefined) return;
+  const rows = await acceptedSummariesBefore(ctx.db, ctx.projectId, prev);
+  if (rows.length === 0) return;
+  const ko = ctx.lang === 'ko';
+  const blocks = new Map<number, typeof rows>();
+  for (const r of rows) {
+    const b = Math.floor((r.chapter_no - 1) / DIGEST_BLOCK);
+    blocks.set(b, [...(blocks.get(b) ?? []), r]);
+  }
+  const newest = Math.max(...blocks.keys());
+  for (const [b, block] of blocks) {
+    const from = block[0]?.chapter_no ?? 0;
+    const to = block[block.length - 1]?.chapter_no ?? 0;
+    const lines = block.map((r) =>
+      ko ? `${r.chapter_no}화: ${r.text}` : `Ch.${r.chapter_no}: ${r.text}`,
+    );
+    out.push({
+      kind: 'summary',
+      id: `story_so_far:${from}-${to}`,
+      section: sec.name,
+      tier: sec.tier,
+      provenance: 'summary',
+      source: {
+        kind: 'summary',
+        ref: block.map((r) => r.summary_id).join(','),
+        version: `L1-digest@canon${ctx.canonVersion}`,
+        project_id: ctx.projectId,
+      },
+      text: `${ko ? `${from}~${to}화` : `Chapters ${from}–${to}`}\n${lines.join('\n')}`,
+      materiality: 'contextual',
+      signals: { recency: newest === 0 ? 1 : b / newest, entity_overlap: 0, importance: 0.5 },
+      dedupeKey: `story_so_far:${from}-${to}`,
+    });
+  }
+}
+
+/**
+ * First meetings (ADR-0061): for each pair of on-page participants, the accepted chapter in which they first
+ * took part in the same canonical event — or that they never have, so the writer does not let them greet
+ * each other by name before an introduction (a 개연성 error readers catch at once).
+ */
+async function fetchFirstMeetings(ctx: Ctx, out: Item[]): Promise<void> {
+  const sec = namedSection(ctx.template, 'first_meetings', 'relationship_state');
+  if (!sec) return;
+  const pairs = await firstMeetings(ctx.db, {
+    projectId: ctx.projectId,
+    timelineId: ctx.timeline.id,
+    entityIds: ctx.plan.participantIds,
+    asOfVersion: ctx.canonVersion,
+  });
+  if (pairs.length === 0) return;
+  await loadNames(
+    ctx,
+    pairs.flatMap((p) => [p.a, p.b]),
+  );
+  const n = nameOf(ctx);
+  const ko = ctx.lang === 'ko';
+  for (const p of pairs) {
+    const text =
+      p.chapter_no !== null
+        ? ko
+          ? `${n(p.a)} ↔ ${n(p.b)}: ${p.chapter_no}화에 처음 함께 나왔다.`
+          : `${n(p.a)} ↔ ${n(p.b)}: first appeared together in chapter ${p.chapter_no}.`
+        : p.related
+          ? ko
+            ? `${n(p.a)} ↔ ${n(p.b)}: 원고에서 함께 나온 적은 없지만 이야기 전부터의 관계가 있다(관계 줄 참고).`
+            : `${n(p.a)} ↔ ${n(p.b)}: never on page together yet, but related from before the story (see the relationship lines).`
+          : ko
+            ? `${n(p.a)} ↔ ${n(p.b)}: 아직 만난 적이 없다. 이번 회차가 첫 만남이면 소개 전에 서로의 이름이나 사정을 알지 못한다.`
+            : `${n(p.a)} ↔ ${n(p.b)}: have not met yet. If they meet in this chapter, neither knows the other's name or circumstances before an introduction.`;
+    out.push({
+      kind: 'relationship_state',
+      id: `first_meeting:${p.a}:${p.b}`,
+      section: sec.name,
+      tier: sec.tier,
+      provenance: p.event_id ? 'canon_event' : 'relationship_state',
+      source: canonSource(ctx, p.event_id ?? `${p.a}:${p.b}`, ctx.timeline.id),
+      text,
+      materiality: 'material',
+      entityIds: [p.a, p.b],
+      dedupeKey: `first_meeting:${p.a}:${p.b}`,
+    });
+  }
 }
 
 async function fetchWorldRules(ctx: Ctx, out: Item[]): Promise<void> {
@@ -1231,10 +1349,12 @@ export async function fetchContext(db: Queryable, opts: FetchOptions): Promise<F
     await fetchStates(ctx, items);
     await fetchKnowledge(ctx, items);
     await fetchRelationships(ctx, items, registerLines);
+    await fetchFirstMeetings(ctx, items);
     await fetchPromises(ctx, items);
     seenEvents = await fetchEvents(ctx, items);
     await fetchWorldRules(ctx, items);
     previous = await fetchPreviousChapter(ctx, items, opts.policy.context);
+    await fetchStorySoFar(ctx, items);
     const chapterText = await chapterTextItem(ctx, opts);
     if (chapterText) items.push(chapterText);
   } catch (err) {

@@ -21,6 +21,7 @@ import {
   getJobByWorkflowId,
   getManuscriptVersion,
   getProject,
+  l1SummaryFor,
   listJobSteps,
   timelinesOf,
   updateJob,
@@ -784,7 +785,35 @@ async function planFromBlueprint(
     const exits = prior.rows[0]?.payload.exit_state_assertions;
     if (exits?.length) previousArcExit = exits.join('; ');
   }
+  // ADR-0061: the next arc starts from what the accepted text established, not only from what the previous
+  // arc planned. The last accepted chapter's summary and ending travel with the planned exit, and the brief
+  // says which one wins.
+  const actual = await acceptedArcEnding(ctx, arc.from);
+  if (actual) {
+    const ko = ctx.identity.outputLanguage.language === 'ko';
+    const planned = previousArcExit;
+    previousArcExit = ko
+      ? `${planned ? `(계획) ${planned}. ` : ''}(승인된 원고, ${actual.chapterNo}화에서 실제로 끝난 상태 — 계획과 다르면 이쪽이 우선한다) ${actual.summary}${actual.hook ? ` 마지막 장면: “${actual.hook}”` : ''}`
+      : `${planned ? `(planned) ${planned}. ` : ''}(accepted text: how chapter ${actual.chapterNo} actually ended — this wins over the plan) ${actual.summary}${actual.hook ? ` Last scene: “${actual.hook}”` : ''}`;
+  }
   return planArcFromBlueprint(ctx, { blueprint, bible, arc, previousArcExit });
+}
+
+/** The accepted chapter just before an arc starts: its L1 summary and ending hook (never a draft). */
+async function acceptedArcEnding(
+  ctx: WorkflowContext,
+  arcFrom: number,
+): Promise<{ chapterNo: number; summary: string; hook: string | undefined } | undefined> {
+  if (arcFrom <= 1) return undefined;
+  const found = await acceptedChapter(ctx.pool, ctx.projectId, arcFrom - 1);
+  if (found.state !== 'accepted') return undefined;
+  const summary = await l1SummaryFor(ctx.pool, found.chapter.version.id);
+  if (!summary) return undefined;
+  return {
+    chapterNo: arcFrom - 1,
+    summary: summary.text,
+    hook: summary.ending_hook ?? undefined,
+  };
 }
 
 function specSummaryOf(spec: StorySpec, artifactId: string): ChapterProductionResult['spec'] {

@@ -3,6 +3,44 @@
 The single place that records implementation status (ADR-0043). Update it in every checkpoint commit.
 Everything else in `docs/` describes design; only this file claims what exists and what has run.
 
+## Workstream 4 — long-story memory — 2026-09-23
+
+Branch `hoplite/mende-33d541c8--ws4-long-memory`, stacked on Workstream 3. ADR-0061 records the decisions; the
+Step 0 improvement audit (§4, PR #1) records the findings.
+
+**Built:**
+
+- `promisesForChapter` always returns overdue open promises. Their pack line reads `OVERDUE by N chapters`
+  (`회수 기한 N화 초과`), and they rank as most urgent.
+- New pack sections `story_so_far` (T2) and `first_meetings` (T1) in `pack.scene_writer`,
+  `pack.chapter_planner` and `pack.continuity_checker`, all three now `1.1.0`.
+  - `story_so_far` gives the accepted L1 summaries before k−1 in ten-chapter blocks, newest first.
+  - `first_meetings` gives, for each on-page pair, the first chapter they shared a canonical event, or that
+    they have not met, or that they are related from before the story.
+  - The data comes from two new db reads: `acceptedSummariesBefore` and `firstMeetings`.
+- The next arc's brief carries the last accepted chapter's summary and ending next to the planned exit, and
+  the accepted text wins.
+- `auditSeries` and `series:audit` form a deterministic whole-serial report. It lists overdue promises,
+  characters absent for more than 20 chapters, canonical story-time regressions and repeated openings.
+
+**Measured:**
+
+- 120-chapter replay: all 120 chapters were accepted with no replay misses.
+  - Chapter 120's writer pack carries all 12 story-so-far blocks (chapters 1–118) and its first-meeting
+    line within budget.
+  - The series audit ran twice and gave identical reports: 0 overdue promises, 4 characters absent for more
+    than 20 chapters, 0 story-time regressions, and 119 repeated openings. The repeated openings are real:
+    the synthetic fixture opens every chapter with the same template sentence.
+- Context integration test: an overdue promise that shares no participant with chapter 10 now reaches the
+  writer. Chapter 3 is in the digest. The chapter-9 first meeting of Mu-jin and Do-yoon is rendered.
+
+**Not done:**
+
+- Model-written L2–L4 summaries.
+- The retcon flow (edit an accepted chapter, re-extract, list dependent chapters).
+- Deterministic planning-time enforcement of overdue promises; the promise checker and the audit report
+  them instead.
+
 ## Workstream 3 — evaluation v2 — 2026-09-23
 
 Branch `hoplite/mende-33d541c8--ws3-evaluators`, stacked on Workstream 1 (`c21c7df`). ADR-0060 records the

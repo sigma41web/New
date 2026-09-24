@@ -1120,6 +1120,34 @@ run('context packs over the real canon (Postgres integration)', () => {
     expect(lookup.state).toBe('not_accepted');
   });
 
+  it('long-story memory (ADR-0061): an overdue promise, the story so far and first meetings reach the writer', async () => {
+    // Overdue since chapter 6 and sharing no participant with chapter 10: invisible before ADR-0061.
+    await createPromise(pool, {
+      workspaceId: ws,
+      projectId: project,
+      type: 'mystery',
+      statement: 'Who forged the gate permit in the Association archive?',
+      importance: 'major',
+      status: 'open',
+      dueMinChapter: 4,
+      dueMaxChapter: 6,
+      relatedEntityIds: [],
+    });
+    const writer = await build('scene_writer', { persist: false });
+    const text = writer.pack.renderedUser;
+    expect(text).toContain('Who forged the gate permit in the Association archive?');
+    expect(text).toMatch(/Who forged the gate permit[^\n]*OVERDUE by 4 chapters/);
+    // Chapter 3 is accepted and older than the previous chapter (9): it reaches the story-so-far digest.
+    const story = writer.pack.sections.find((s) => s.name === 'story_so_far')?.text ?? '';
+    expect(story).toMatch(/Chapters 3–3\nCh\.3: /);
+    // Mu-jin and Do-yoon first shared a canonical event in chapter 9 (the fog-beast injury).
+    const meetings = writer.pack.sections.find((s) => s.name === 'first_meetings')?.text ?? '';
+    expect(meetings).toMatch(
+      /(Park Mu-jin ↔ Kang Do-yoon|Kang Do-yoon ↔ Park Mu-jin): first appeared together in chapter 9\./,
+    );
+    expect(writer.pack.manifest.template_version).toMatch(/^1\.1\.0\+/);
+  });
+
   it('rollback de-accepts chapter 9 and removes its search documents and summary in the same transaction', async () => {
     // Chapter 10 is now unbuildable (k−1 no longer accepted); then re-accepting restores it.
     const before = await searchDocumentCount(pool, project);

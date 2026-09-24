@@ -60,6 +60,7 @@ import {
   longformShareFactLocalId,
 } from './longform-fixture.js';
 import { createLongformHarness, type LongformHarness } from './longform-harness.js';
+import { auditSeries } from './series-audit.js';
 
 const run = databaseUrl() ? describe : describe.skip;
 
@@ -362,6 +363,49 @@ run(`120-chapter deterministic continuity replay (B-4-1 deterministic portion)`,
     },
     120_000,
   );
+
+  it('long-story memory reaches the writer: the story so far and first meetings (ADR-0061)', async () => {
+    const writerPack = async (k: number) =>
+      (
+        await pool.query<{
+          payload: { renderedUser: string; manifest: { template_version?: string } };
+        }>(
+          `SELECT payload FROM workflow_artifacts
+            WHERE project_id = $1 AND kind = 'context_pack' AND key = $2`,
+          [h.projectId, `${k}:scene_writer`],
+        )
+      ).rows[0]?.payload;
+    // Chapter 2 has nothing older than its previous chapter; chapter 12 carries ten chapters of digest.
+    expect((await writerPack(2))?.renderedUser).not.toMatch(/STORY SO FAR/);
+    const late = (await writerPack(LONGFORM_CHAPTERS))?.renderedUser ?? '';
+    expect(late).toMatch(/STORY SO FAR/);
+    expect(late).toMatch(/Chapters 1\d\d–1\d\d|Chapters \d+–\d+/);
+    expect(late).toMatch(/FIRST MEETINGS/);
+    expect((await writerPack(12))?.renderedUser ?? '').toMatch(/Ch\.1: /);
+    report(
+      `chapter ${LONGFORM_CHAPTERS} writer pack: story-so-far blocks ${String((late.match(/Chapters \d+–\d+/g) ?? []).length)}, ` +
+        `first-meeting lines ${String((late.match(/ ↔ /g) ?? []).length)}`,
+    );
+  });
+
+  it('the series audit reads all 120 accepted chapters deterministically (ADR-0061)', async () => {
+    const a = await auditSeries(pool, h.projectId);
+    const again = await auditSeries(pool, h.projectId);
+    expect(again).toEqual(a);
+    expect(a.accepted_chapters).toBe(LONGFORM_CHAPTERS);
+    expect(a.last_chapter).toBe(LONGFORM_CHAPTERS);
+    for (const p of a.overdue_promises) {
+      expect(p.due_max_chapter).toBeLessThan(LONGFORM_CHAPTERS);
+      expect(p.overdue_by).toBe(LONGFORM_CHAPTERS - p.due_max_chapter);
+    }
+    for (const c of a.absent_characters) expect(c.absent_for).toBeGreaterThan(20);
+    report(
+      `series audit: ${String(a.overdue_promises.length)} overdue promises, ` +
+        `${String(a.absent_characters.length)} characters absent > 20 chapters, ` +
+        `${String(a.clock_regressions.length)} story-time regressions, ` +
+        `${String(a.repeated_openings.length)} repeated openings`,
+    );
+  });
 
   it('chapter k reads the canon version chapter k−1 wrote, for all 120 chapters', () => {
     results.forEach((r, i) => {

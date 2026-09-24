@@ -166,6 +166,27 @@ that scene is shorter than `previous_tail_extend_to_scene_below_words`, starting
 states as of `story_time.start`), (f) elapsed story time between k−1 end and k start from the contract. If chapter k−1 is not accepted, chapter k cannot start (FR-7.13). For k=1, (b)
 is replaced by the concept's chapter-one hook plan.
 
+### 4.1 Long-story memory (ADR-0061)
+
+Chapter k−1 is not the only memory. Beyond it:
+
+- **Story so far** (`story_so_far`, T2; writer, chapter planner, continuity checker). The L1 summaries of
+  every accepted chapter before k−1, in blocks of ten chapters, one item per block. The newest block ranks
+  first, so a tight budget sheds the oldest. The digest is deterministic: accepted summaries only, never a
+  model call and never a draft.
+- **First meetings** (`first_meetings`, T1; same templates). For each pair of on-page participants, this
+  gives the accepted chapter in which both first took part in a canonical event, or states that they
+  never have. Pairs related from before the story are marked as related. A pair that has not met must not
+  know each other's names before an introduction.
+- **Overdue promises.** An open promise past the end of its due window is always in the promise section,
+  whoever is on page. Its line states the number of chapters it is overdue, and it ranks as most urgent.
+- **Arc chaining.** The brief for the next arc carries the previous arc's planned exit together with how
+  the last accepted chapter actually ended (its L1 summary and ending hook). The accepted text wins where
+  they differ.
+- **Series audit.** `series:audit` is a deterministic whole-serial report, and it blocks nothing. It
+  lists overdue promises, characters absent from canonical events past a threshold, canonical story time
+  that moves backwards between chapters, and openings that read like the previous chapter's opening.
+
 ## 5. Caching and deduplication
 
 - Section-level cache keyed by content hash (identity block, Active Constraint Set, bible slice, L4
