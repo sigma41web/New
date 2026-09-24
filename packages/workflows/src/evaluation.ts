@@ -191,6 +191,8 @@ export function runDeterministicChecks(
   version: ManuscriptVersionRow,
   contract: ChapterContract,
   allowlist: readonly string[],
+  /** Character names for the misspelled-name check (ADR-0062); empty when the bible is not at hand. */
+  personNames: readonly string[] = [],
 ): DeterministicChecks {
   const nfc = toNfcText(version.text);
   const issues: Issue[] = [];
@@ -230,6 +232,7 @@ export function runDeterministicChecks(
       thresholds: ol.lint_thresholds,
       allowlist,
       exemplarTexts: exemplarsOf(ctx.identity).map((e) => e.text),
+      personNames,
     });
     for (const f of koStyle.findings)
       issues.push(
@@ -494,7 +497,10 @@ export async function evaluateVersion(
     ctx,
     'evaluate',
     async () => {
-      const det = runDeterministicChecks(ctx, v, input.contract, input.allowlist);
+      const personNames = (input.bible?.entities ?? [])
+        .filter((e) => e.type === 'character')
+        .flatMap((e) => [e.display_name, ...(e.short_forms ?? []), ...(e.aliases ?? [])]);
+      const det = runDeterministicChecks(ctx, v, input.contract, input.allowlist, personNames);
       const nfc = toNfcText(v.text);
       const paragraphs = segmentParagraphs(nfc);
       const anchor = { text: nfc, paragraphs };

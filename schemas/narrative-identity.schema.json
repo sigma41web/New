@@ -404,7 +404,7 @@
       "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
-        "category": { "type": "string", "enum": ["translation_like", "light_novel", "screenplay", "outline", "honorific_morpheme", "calque", "stale_cliche", "project_specific"] },
+        "category": { "type": "string", "enum": ["translation_like", "light_novel", "screenplay", "outline", "honorific_morpheme", "calque", "stale_cliche", "spelling", "project_specific"] },
         "pattern": { "type": "string" },
         "is_regex": { "type": "boolean", "default": true },
         "severity": { "$ref": "common.schema.json#/$defs/severity" },

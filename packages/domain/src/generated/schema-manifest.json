@@ -19,7 +19,7 @@
   "lint-report.schema.json": "52d08b8848eac72241f5023332367ca0c5ff8dafb2722c8b5192abcbc816dd9b",
   "llm-call-record.schema.json": "177b9d5e8c5dd45a8385f1aad803823888f30b9555a94cd2b6f9da2117081a0f",
   "model-output.schema.json": "688ecab1a410b2da94ec67721a5255ed4fce6d0969eee4a7f36a8492c1742960",
-  "narrative-identity.schema.json": "aacb4d279fcaf5f07cd64b80166ca753b7af30d4eac99b8fc2bda69246d73f4f",
+  "narrative-identity.schema.json": "91b8c128d9477ebe0535b839233f1e6a3ecc3ebddf01464fbfb0accbc332cd53",
   "patch.schema.json": "b1e95036b8817a8b3347bbcb02c5ac9a8785117c2869efd25db5272c4162a39b",
   "production-policy.schema.json": "7c8f88429aaf79204ff598280ad967d8c536805af8ce9d962b781b75dc28bbb3",
   "promise.schema.json": "02025c5af27cc4c8bb29030dc6942c8ba834c5ef27666c6bc7ec0f1a98d82684",

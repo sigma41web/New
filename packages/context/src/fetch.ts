@@ -1534,7 +1534,14 @@ export async function fetchContext(db: Queryable, opts: FetchOptions): Promise<F
       .map((c) => `[${c.id}] ${c.text}`);
     const block = compileBlock(opts.identity, {
       role: template.identityVariant,
-      budgetTokens: opts.identityBlockBudgetTokens ?? Math.max(1500, Math.floor(budget * 0.25)),
+      // ADR-0062: a Korean block is measured in 자 (korean_chars_v1), which counts about 1.4× the real
+      // tokens, so it gets 35% of the pack instead of 25% — the same real-token room as before.
+      budgetTokens:
+        opts.identityBlockBudgetTokens ??
+        Math.max(
+          1500,
+          Math.floor(budget * (opts.identity.outputLanguage.language === 'ko' ? 0.35 : 0.25)),
+        ),
       participants,
       contentRestrictions: restrictions,
     });

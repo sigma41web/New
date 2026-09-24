@@ -83,6 +83,14 @@ export function estimateTokens(text: string): number {
   return Math.ceil(text.split(/\s+/).filter(Boolean).length * 1.3);
 }
 
+/**
+ * Korean block estimator (ADR-0062): one token per 자 without line breaks — `korean_chars_v1`, the unit Korean
+ * context packs are measured in (ADR-0059). Word counts undercounted Korean blocks two- to threefold.
+ */
+export function estimateTokensKo(text: string): number {
+  return Array.from(text.replace(/\n/g, '')).length;
+}
+
 interface Section {
   readonly name: string;
   readonly text: string;
@@ -377,7 +385,9 @@ export function compileBlock(id: ComposedIdentity, opts: CompileOptions): Compil
     preferences: { name: 'preferences', text: R.preferences(id), priority: 40 },
     // Korean-only craft sections (ADR-0056); empty for English identities, so English blocks keep their bytes.
     avoid: { name: 'avoid', text: isKo ? renderAvoidKo(id) : '', priority: 72 },
-    exemplars: { name: 'exemplars', text: isKo ? renderExemplarsKo(id) : '', priority: 50 },
+    // ADR-0062: exemplars are the most direct lever against 번역투, so they outrank everything but the
+    // participants' voice cards; setting, preferences and cadence go first when a Korean block is tight.
+    exemplars: { name: 'exemplars', text: isKo ? renderExemplarsKo(id) : '', priority: 86 },
     restrictions: {
       name: 'restrictions',
       text: opts.contentRestrictions?.length ? bullet(opts.contentRestrictions) : '',
@@ -414,9 +424,10 @@ export function compileBlock(id: ComposedIdentity, opts: CompileOptions): Compil
         `## Output-Language Contract (English)\n${langContract}`,
         `## Narrative-Tradition Contract (Korean serialized webnovel)\n${tradContract}`,
       ];
+  const est = isKo ? estimateTokensKo : estimateTokens;
   const coreTokens =
-    estimateTokens(core.join('\n\n')) +
-    estimateTokens(
+    est(core.join('\n\n')) +
+    est(
       wanted
         .filter((s) => s.priority === Infinity)
         .map((s) => s.text)
@@ -430,9 +441,9 @@ export function compileBlock(id: ComposedIdentity, opts: CompileOptions): Compil
   const byPriority = [...wanted].sort(
     (a, b) => b.priority - a.priority || a.name.localeCompare(b.name),
   );
-  let total = estimateTokens(core.join('\n\n'));
+  let total = est(core.join('\n\n'));
   for (const s of byPriority) {
-    const t = estimateTokens(s.text) + 4;
+    const t = est(s.text) + 4;
     if (s.priority === Infinity || total + t <= opts.budgetTokens) {
       included.push(s);
       total += t;
@@ -490,7 +501,7 @@ export function compileBlock(id: ComposedIdentity, opts: CompileOptions): Compil
       ...ordered.map((s) => s.name),
     ],
     droppedSections: dropped,
-    estTokens: estimateTokens(body),
+    estTokens: est(body),
     identityTail: tail,
   };
 }

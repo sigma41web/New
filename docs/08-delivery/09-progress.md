@@ -3,6 +3,36 @@
 The single place that records implementation status (ADR-0043). Update it in every checkpoint commit.
 Everything else in `docs/` describes design; only this file claims what exists and what has run.
 
+## Workstream 5 — prose quality for Korean manuscripts — 2026-09-24
+
+Branch `hoplite/mende-33d541c8--ws5-prose-quality`, stacked on Workstream 4. ADR-0062 records the decisions, and
+the Step 0 improvement audit (§5, PR #1) records the findings.
+
+**Built:**
+
+- The identity compiler measures Korean blocks with `estimateTokensKo` (one token per 자).
+- Exemplars now have priority 86, up from 50.
+- Korean writer and editor packs give the block 35% of the pack budget; English blocks are unchanged.
+- The Korean language layer v4 adds 22 `spelling` patterns and thresholds for KO-END-02 (ending monotony)
+  and KO-NAME-01 (misspelled character names). Both rules run only for layers that carry their
+  thresholds.
+- The lint reports `monologue_ratio`.
+- Evaluation passes the bible's character names to the lint.
+
+**Measured:** Korean writer blocks composed from intake:
+
+| Genre | Size | Dropped at 8,400 (35% of 24,000) | Exemplars kept |
+| --- | --- | --- | --- |
+| hunter-gate | 5,185자 | nothing | yes |
+| regression | 6,235자 | nothing | yes |
+| academy | 6,653자 | nothing | yes |
+
+At the old 6,000 cap the same blocks would have dropped cadence and setting, or genres. The English
+estimator had counted them as about a third of their size.
+
+**Not done:** user style samples (Workstream 6), a polish pass, best-of-N candidates, continuation and
+trim, Korean export headings, and prompt-rule restructuring (Workstream 9).
+
 ## Workstream 4 — long-story memory — 2026-09-23
 
 Branch `hoplite/mende-33d541c8--ws4-long-memory`, stacked on Workstream 3. ADR-0061 records the decisions; the

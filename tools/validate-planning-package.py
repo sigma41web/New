@@ -74,6 +74,8 @@ EXAMPLES = [
     ("examples/narrative-profiles/genre-regression.v3.json", "narrative-identity.schema.json"),
     ("examples/narrative-profiles/genre-academy.v3.json", "narrative-identity.schema.json"),
     ("examples/narrative-profiles/genre-harem.v2.json", "narrative-identity.schema.json"),
+    # ADR-0062 spelling list and new lint thresholds
+    ("examples/narrative-profiles/lang-ko.v4.json", "narrative-identity.schema.json"),
     ("examples/production-policies/standard.v1.json", "production-policy.schema.json"),
     ("examples/production-policies/economy.v1.json", "production-policy.schema.json"),
     ("examples/production-policies/premium.v1.json", "production-policy.schema.json"),

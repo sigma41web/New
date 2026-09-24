@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { koStyleDigest, lintKoreanWebnovel } from './ko-style.js';
 
@@ -65,5 +67,89 @@ describe('lintKoreanWebnovel', () => {
       exemplarTexts: [exemplar],
     });
     expect(r.findings.map((f) => f.rule_id)).toContain('EXEMPLAR-COPY');
+  });
+});
+
+describe('ADR-0062 rules: spelling, ending monotony, misspelled names', () => {
+  const profile = JSON.parse(
+    readFileSync(
+      fileURLToPath(
+        new URL('../../../examples/narrative-profiles/lang-ko.v4.json', import.meta.url),
+      ),
+      'utf8',
+    ),
+  ) as {
+    output_language: {
+      forbidden_patterns: { id: string; category: string; pattern: string; severity: string }[];
+      lint_thresholds: Record<string, { warn: number; fail: number }>;
+    };
+  };
+  const v4 = {
+    forbiddenPatterns: profile.output_language.forbidden_patterns,
+    thresholds: profile.output_language.lint_thresholds,
+  };
+
+  it('reports common misspellings from the language layer as minor 맞춤법 findings with the correction', () => {
+    const r = lintKoreanWebnovel(
+      '처음 보는 천장이 낮설었다. 몇일이 지났는지 모른다. 금새 해가 졌다.',
+      v4,
+    );
+    const spelling = r.findings.filter((f) => f.rule_id.startsWith('KO-SP-'));
+    expect(spelling.map((f) => f.rule_id)).toEqual(['KO-SP-01', 'KO-SP-02', 'KO-SP-03']);
+    for (const f of spelling) {
+      expect(f.kind).toBe('other');
+      expect(f.severity).toBe('minor');
+      expect(f.message).toMatch(/^맞춤법: /);
+    }
+    expect(spelling[0]?.message).toContain('‘낯설다’');
+    expect(spelling[0]?.quote).toBe('낮설');
+  });
+
+  it('flags a run of narration sentences closing on the same two syllables, not varied endings', () => {
+    const monotone =
+      '그는 문을 열었다. 복도를 걸었다. 창을 넘었다. 벽을 짚었다. 빵을 먹었다. 외투를 벗었다.';
+    expect(
+      lintKoreanWebnovel(monotone, v4).findings.find((f) => f.rule_id === 'KO-END-02'),
+    ).toMatchObject({ severity: 'minor', value: 6, threshold: 5 });
+    // Four in a row is below the starting threshold (5).
+    const four = '그는 문을 열었다. 복도를 걸었다. 창을 넘었다. 벽을 짚었다. 칼을 잡았다.';
+    expect(lintKoreanWebnovel(four, v4).findings.some((f) => f.rule_id === 'KO-END-02')).toBe(
+      false,
+    );
+    const varied = '그는 문을 열었다. 복도는 길었다. 누군가 웃는다. 발소리가 멈췄지. 조용하다.';
+    expect(lintKoreanWebnovel(varied, v4).findings.some((f) => f.rule_id === 'KO-END-02')).toBe(
+      false,
+    );
+  });
+
+  it('flags a word one syllable away from a registered character name, never the name or its particles', () => {
+    const r = lintKoreanWebnovel(
+      '서지안은 칼을 들었다. 서지얀이 뒤를 돌아봤다. 서지안의 손이 떨렸다.',
+      {
+        ...v4,
+        personNames: ['서지안'],
+      },
+    );
+    const names = r.findings.filter((f) => f.rule_id === 'KO-NAME-01');
+    expect(names).toHaveLength(1);
+    expect(names[0]).toMatchObject({
+      kind: 'naming_registry_violation',
+      severity: 'minor',
+      quote: '서지얀',
+    });
+  });
+
+  it('runs none of the three rules for a language layer without their thresholds (lang/ko@3)', () => {
+    const r = lintKoreanWebnovel(
+      '그는 문을 열었다. 복도를 걸었다. 창을 넘었다. 벽을 짚었다. 칼을 잡았다. 서지얀이 웃었다.',
+      { personNames: ['서지안'] },
+    );
+    expect(r.findings.some((f) => ['KO-END-02', 'KO-NAME-01'].includes(f.rule_id))).toBe(false);
+  });
+
+  it('reports the 속마음 share apart from dialogue', () => {
+    const r = lintKoreanWebnovel('‘이상하다.’ 그는 생각했다.\n\n“뭐야?” 그녀가 물었다.', v4);
+    expect(r.metrics.monologue_ratio).toBeGreaterThan(0);
+    expect(r.metrics.dialogue_ratio).toBeGreaterThan(0);
   });
 });

@@ -468,6 +468,7 @@ export interface ForbiddenPattern {
     | 'honorific_morpheme'
     | 'calque'
     | 'stale_cliche'
+    | 'spelling'
     | 'project_specific';
   pattern: string;
   is_regex?: boolean;

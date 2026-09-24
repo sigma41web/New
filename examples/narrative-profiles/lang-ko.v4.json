@@ -1,0 +1,596 @@
+{
+  "id": "lang/ko",
+  "kind": "output_language",
+  "version": 4,
+  "name": "한국어 출력 언어 프로필 v3 (웹소설 문장, 번역투·AI 상투구 금지) — v4: 맞춤법 오류 목록, 어미 반복·이름 오기 검사 (ADR-0062)",
+  "output_language": {
+    "language": "ko",
+    "locale": "ko-KR",
+    "contract_text": "독자가 읽는 원고는 한국 웹소설 작가가 처음부터 한국어로 쓴 문장이다(표준어, ko-KR). 다른 언어로 구상한 문장을 옮기지 않고, 영어식 어순·관용구·문법을 흉내 내지 않는다. 주어는 필요할 때만 쓰고 ‘그’·‘그녀’ 대신 이름·호칭을 쓰거나 생략한다. 짧은 평서문을 기본으로 하되 종결어미와 문장 길이에 변화를 준다. 대사는 큰따옴표(“ ”), 속마음과 인용은 작은따옴표(‘ ’), 말줄임은 ‘……’, 시스템 알림은 대괄호([ ])를 쓰고, 띄어쓰기와 조사를 정확히 지킨다. 말높이(하십시오체·해요체·해체·해라체)와 호칭은 관계와 장면에 맞게, 이 세계 사람이 실제로 말할 법하게 구사한다. 용어는 승인된 표기만 쓴다. 번역투(‘~에 대해’, ‘~를 통해’, ‘~에 있어서’, ‘~를 가지고 있다’, ‘~에 의해’, 이중 피동, ‘~것이었다’ 반복, ‘~을 느낄 수 있었다’)와 AI 상투구(‘알 수 없는 감정’, ‘형용할 수 없는’, ‘시간이 멈춘 듯했다’, ‘정적이 흘렀다’, 입가의 의미심장한 미소 반복, 문단마다 붙는 비유)를 쓰지 않는다.",
+    "punctuation": {
+      "dialogue_quotes": "“ ”",
+      "nested_quotes": "‘ ’",
+      "thought_style": "plain",
+      "dash": "em_unspaced",
+      "ellipsis": "……"
+    },
+    "numbers_style": "아라비아 숫자 + 한국어 단위(10년, 3층, 5미터, 3서클); 대사 속 작은 수는 한글로(한 명, 두 번)",
+    "narration_tense": "past",
+    "translation_markers": [
+      {
+        "id": "TRN-KO-01",
+        "pattern": "에 대해(서)?|에 대한",
+        "weight": 0.4,
+        "severity": "minor",
+        "note": "‘~에 대해/~에 대한’ — 목적격으로 바로 잇는다(‘그 일에 대해 말했다’→‘그 일을 말했다’)."
+      },
+      {
+        "id": "TRN-KO-02",
+        "pattern": "[A-Za-z]{4,}",
+        "weight": 0.6,
+        "severity": "major",
+        "note": "용어 목록 밖의 로마자 단어 — 한글 표기로 쓴다(‘OK’→‘좋아’, ‘skill’→‘스킬’)."
+      },
+      {
+        "id": "TRN-KO-03",
+        "pattern": "(을|를) 통해(서)?",
+        "weight": 0.4,
+        "severity": "minor",
+        "note": "‘~를 통해’ — ‘~로’, ‘~해서’로 바꾼다(‘검을 통해 증명했다’→‘검으로 증명했다’)."
+      },
+      {
+        "id": "TRN-KO-04",
+        "pattern": "에 있어(서)?",
+        "weight": 0.6,
+        "severity": "minor",
+        "note": "‘~에 있어서’ — ‘~에서’, ‘~는’으로 바꾼다."
+      },
+      {
+        "id": "TRN-KO-05",
+        "pattern": "되어지|되어져|지어지|잊혀지|보여지",
+        "weight": 0.6,
+        "severity": "minor",
+        "note": "이중 피동 ‘되어지다·보여지다·잊혀지다’ — ‘됐다·보였다·잊혔다’ 또는 능동으로."
+      },
+      {
+        "id": "TRN-KO-06",
+        "pattern": "(을|를) 가지고 있(다|었다|는|던)",
+        "weight": 0.4,
+        "severity": "minor",
+        "note": "‘~를 가지고 있다’ — ‘~이 있다’, 형용사로(‘재능을 가지고 있었다’→‘재능이 있었다’)."
+      },
+      {
+        "id": "TRN-KO-07",
+        "pattern": "하는 중이(다|었다)",
+        "weight": 0.3,
+        "severity": "minor",
+        "note": "‘~하는 중이었다’ — ‘~하고 있었다’, ‘~했다’로."
+      },
+      {
+        "id": "TRN-KO-08",
+        "pattern": "에 의해(서)?",
+        "weight": 0.5,
+        "severity": "minor",
+        "note": "‘~에 의해’ 수동태 — 행위자를 주어로(‘마수에 의해 쓰러졌다’→‘마수가 쓰러뜨렸다’)."
+      },
+      {
+        "id": "TRN-KO-09",
+        "pattern": "(을|를) 느낄 수 있었다",
+        "weight": 0.5,
+        "severity": "minor",
+        "note": "‘~을 느낄 수 있었다’ — ‘~이 느껴졌다’, 감각을 바로 쓴다(‘살기를 느낄 수 있었다’→‘살기가 목덜미를 긁었다’)."
+      },
+      {
+        "id": "TRN-KO-10",
+        "pattern": "(것을|수) 알 수 있었다",
+        "weight": 0.4,
+        "severity": "minor",
+        "note": "‘~것을 알 수 있었다’ — ‘~였다’, ‘~인 모양이었다’."
+      },
+      {
+        "id": "TRN-KO-11",
+        "pattern": "것이었다",
+        "weight": 0.2,
+        "severity": "minor",
+        "note": "‘~것이었다’ — 한 회차 두 번 이하."
+      },
+      {
+        "id": "TRN-KO-12",
+        "pattern": "에게 있어(서)?",
+        "weight": 0.6,
+        "severity": "minor",
+        "note": "‘~에게 있어’ — ‘~에게는’, ‘~한테’."
+      },
+      {
+        "id": "TRN-KO-13",
+        "pattern": "와 관련(하여|해서|된)",
+        "weight": 0.3,
+        "severity": "minor",
+        "note": "‘~와 관련하여/관련된’ — 조사로 바로 잇는다."
+      },
+      {
+        "id": "TRN-KO-14",
+        "pattern": "(?<![가-힣])(그|그녀)(는|가|의|를|에게) ",
+        "weight": 0.15,
+        "severity": "minor",
+        "note": "‘그는/그녀는/그의’ — 이름·호칭을 쓰거나 주어를 생략한다."
+      }
+    ],
+    "calque_phrases": [],
+    "forbidden_patterns": [
+      {
+        "id": "LN-01",
+        "category": "light_novel",
+        "pattern": "[「」『』]",
+        "severity": "minor",
+        "weight": 0.6,
+        "note": "라이트노벨식 괄호 — 대사는 “ ”, 속마음은 ‘ ’, 시스템은 [ ]."
+      },
+      {
+        "id": "SP-01",
+        "category": "screenplay",
+        "pattern": "(^|\\n)\\s*(INT\\.|EXT\\.|SCENE\\s?\\d|CUT TO|\\(V\\.O\\.\\)|\\[대사\\])",
+        "severity": "blocking",
+        "weight": 2.0,
+        "note": "시나리오 표기 금지."
+      },
+      {
+        "id": "SP-02",
+        "category": "outline",
+        "pattern": "(^|\\n)\\s*(#{1,6}\\s|[-*]\\s|\\d+\\)\\s)",
+        "severity": "major",
+        "weight": 1.0,
+        "note": "마크다운·개요 표기 금지."
+      },
+      {
+        "id": "SP-03",
+        "category": "outline",
+        "pattern": "(^|\\n)\\s*(\\[?장면\\s?\\d+\\]?|\\d+화\\s*[:.]|제\\s?\\d+\\s?화)",
+        "severity": "major",
+        "weight": 1.0,
+        "note": "원고 안의 회차·장면 제목 금지."
+      },
+      {
+        "id": "AIT-KO-01",
+        "category": "stale_cliche",
+        "pattern": "알 수 없는 (감정|기분|무언가|느낌)",
+        "severity": "minor",
+        "weight": 0.8,
+        "note": "‘알 수 없는 감정/기분’ — 감정에 이름을 붙이지 말고 몸의 반응·행동 하나로 보여 준다."
+      },
+      {
+        "id": "AIT-KO-02",
+        "category": "stale_cliche",
+        "pattern": "형용할 수 없는|(말로|이루) (다 )?표현할 수 없는",
+        "severity": "minor",
+        "weight": 0.8,
+        "note": "‘형용할 수 없는/말로 표현할 수 없는’ — 구체적인 한 가지를 쓴다."
+      },
+      {
+        "id": "AIT-KO-03",
+        "category": "stale_cliche",
+        "pattern": "하지 않을 수 없었다",
+        "severity": "minor",
+        "weight": 0.6,
+        "note": "‘~하지 않을 수 없었다’ — ‘~했다’로."
+      },
+      {
+        "id": "AIT-KO-04",
+        "category": "stale_cliche",
+        "pattern": "시간이 (멈춘|정지한) (듯|것 같)",
+        "severity": "minor",
+        "weight": 0.8,
+        "note": "‘시간이 멈춘 듯했다’ — 소리가 끊기거나 누가 굳는 구체적 반응으로."
+      },
+      {
+        "id": "AIT-KO-05",
+        "category": "stale_cliche",
+        "pattern": "정적이 (흘렀|감돌|내려앉)|침묵이 (흘렀|내려앉|감돌)",
+        "severity": "minor",
+        "weight": 0.6,
+        "note": "‘정적이 흘렀다/침묵이 내려앉았다’ — 누가 먼저 입을 여는지, 무슨 소리가 났는지로."
+      },
+      {
+        "id": "AIT-KO-06",
+        "category": "stale_cliche",
+        "pattern": "(공기|분위기)가 (순식간에 |단숨에 |급격히 )?(무거워|얼어붙|가라앉)",
+        "severity": "minor",
+        "weight": 0.6,
+        "note": "‘공기가 무거워졌다/얼어붙었다’ — 인물 반응으로 보여 준다."
+      },
+      {
+        "id": "AIT-KO-07",
+        "category": "stale_cliche",
+        "pattern": "운명의 수레바퀴|운명이 (움직이|꿈틀|요동치)",
+        "severity": "minor",
+        "weight": 0.8,
+        "note": "‘운명의 수레바퀴가 돌기 시작했다’ 같은 서구 서사시 딕션 — 쓰지 않는다."
+      },
+      {
+        "id": "AIT-KO-08",
+        "category": "stale_cliche",
+        "pattern": "(이것|그것|이건|그건)(은|이)? (단지 |그저 )?시작에 불과",
+        "severity": "minor",
+        "weight": 0.8,
+        "note": "‘이것은 시작에 불과했다’ 마무리 — 구체적인 절단 장면으로."
+      },
+      {
+        "id": "AIT-KO-09",
+        "category": "stale_cliche",
+        "pattern": "묘한 (감정|기분|느낌)|가슴 한구석",
+        "severity": "minor",
+        "weight": 0.5,
+        "note": "‘묘한 감정/가슴 한구석’ — 뭉뚱그린 감정 명사 대신 구체적인 반응."
+      },
+      {
+        "id": "AIT-KO-10",
+        "category": "stale_cliche",
+        "pattern": "(옅은|희미한|씁쓸한|의미심장한|묘한) (미소|웃음)",
+        "severity": "minor",
+        "weight": 0.4,
+        "note": "‘옅은/씁쓸한/의미심장한 미소’ — 회차 두 번 이하, 대신 표정이 아닌 행동으로."
+      },
+      {
+        "id": "AIT-KO-11",
+        "category": "stale_cliche",
+        "pattern": "눈빛(에|이|엔) (결의|결연함|단호함|굳은 의지)",
+        "severity": "minor",
+        "weight": 0.5,
+        "note": "‘눈빛에 결의가 서렸다’ — 말이나 행동으로."
+      },
+      {
+        "id": "AIT-KO-12",
+        "category": "stale_cliche",
+        "pattern": "(세상|인생|사람)(은|이란) (원래|언제나|늘|결국) ",
+        "severity": "minor",
+        "weight": 0.6,
+        "note": "‘세상은 원래 ~하다’ 식 관조형 아포리즘 — 문단 끝에 교훈을 달지 않는다."
+      },
+      {
+        "id": "AIT-KO-13",
+        "category": "stale_cliche",
+        "pattern": "그렇게 .{0,20}(하루|밤|날)(가|이) (저물|지나|흘러)",
+        "severity": "minor",
+        "weight": 0.7,
+        "note": "‘그렇게 하루가 저물었다’ 마무리 — 절단으로 끝낸다."
+      },
+      {
+        "id": "AIT-KO-14",
+        "category": "stale_cliche",
+        "pattern": "마치 .{1,24}(처럼|같이|듯)",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘마치 ~처럼’ 비유 — 회차당 서너 번까지, 문단마다 붙이지 않는다."
+      },
+      {
+        "id": "KO-SP-01",
+        "category": "spelling",
+        "pattern": "낮설",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘낮설다’ → ‘낯설다’."
+      },
+      {
+        "id": "KO-SP-02",
+        "category": "spelling",
+        "pattern": "몇 ?일",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘몇일/몇 일’ → ‘며칠’."
+      },
+      {
+        "id": "KO-SP-03",
+        "category": "spelling",
+        "pattern": "금새",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘금새’ → ‘금세’(지금 바로)."
+      },
+      {
+        "id": "KO-SP-04",
+        "category": "spelling",
+        "pattern": "어의(가 )?없",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘어의없다’ → ‘어이없다’."
+      },
+      {
+        "id": "KO-SP-05",
+        "category": "spelling",
+        "pattern": "(할|줄|볼|갈|올|될|있을|먹을)께",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘~ㄹ께’ → ‘~ㄹ게’(할게, 줄게)."
+      },
+      {
+        "id": "KO-SP-06",
+        "category": "spelling",
+        "pattern": "됬",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘됬’ → ‘됐’(되었)."
+      },
+      {
+        "id": "KO-SP-07",
+        "category": "spelling",
+        "pattern": "왠만",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘왠만하면’ → ‘웬만하면’."
+      },
+      {
+        "id": "KO-SP-08",
+        "category": "spelling",
+        "pattern": "웬지",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘웬지’ → ‘왠지’(왜인지)."
+      },
+      {
+        "id": "KO-SP-09",
+        "category": "spelling",
+        "pattern": "오랫만",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘오랫만’ → ‘오랜만’."
+      },
+      {
+        "id": "KO-SP-10",
+        "category": "spelling",
+        "pattern": "설겆이",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘설겆이’ → ‘설거지’."
+      },
+      {
+        "id": "KO-SP-11",
+        "category": "spelling",
+        "pattern": "희안하",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘희안하다’ → ‘희한하다’."
+      },
+      {
+        "id": "KO-SP-12",
+        "category": "spelling",
+        "pattern": "역활",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘역활’ → ‘역할’."
+      },
+      {
+        "id": "KO-SP-13",
+        "category": "spelling",
+        "pattern": "(곰곰|일일|깨끗)히",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘곰곰히·일일히·깨끗히’ → ‘곰곰이·일일이·깨끗이’."
+      },
+      {
+        "id": "KO-SP-14",
+        "category": "spelling",
+        "pattern": "뵈요",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘뵈요’ → ‘봬요’(뵈어요)."
+      },
+      {
+        "id": "KO-SP-15",
+        "category": "spelling",
+        "pattern": "어떻해",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘어떻해’ → ‘어떡해’(어떻게 해)."
+      },
+      {
+        "id": "KO-SP-16",
+        "category": "spelling",
+        "pattern": "내노라",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘내노라하는’ → ‘내로라하는’."
+      },
+      {
+        "id": "KO-SP-17",
+        "category": "spelling",
+        "pattern": "않하",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘않하다’ → ‘안 하다’(부정은 ‘안’)."
+      },
+      {
+        "id": "KO-SP-18",
+        "category": "spelling",
+        "pattern": "어줍잖",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘어줍잖다’ → ‘어쭙잖다’."
+      },
+      {
+        "id": "KO-SP-19",
+        "category": "spelling",
+        "pattern": "궁시렁",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘궁시렁’ → ‘구시렁’."
+      },
+      {
+        "id": "KO-SP-20",
+        "category": "spelling",
+        "pattern": "들어났",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘(진실이) 들어났다’ → ‘드러났다’."
+      },
+      {
+        "id": "KO-SP-21",
+        "category": "spelling",
+        "pattern": "설레임",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "‘설레임’ → ‘설렘’."
+      },
+      {
+        "id": "KO-SP-22",
+        "category": "spelling",
+        "pattern": "바램(?!색)",
+        "severity": "minor",
+        "weight": 0.3,
+        "note": "소망의 뜻이면 ‘바램’ → ‘바람’."
+      }
+    ],
+    "lint_thresholds": {
+      "EP-GRM-01": {
+        "warn": 3,
+        "fail": 6
+      },
+      "EP-OPEN-01": {
+        "warn": 3,
+        "fail": 4
+      },
+      "EP-OPEN-02": {
+        "warn": 0.6,
+        "fail": 0.75
+      },
+      "EP-LEN-01": {
+        "warn": 18,
+        "fail": 25
+      },
+      "EP-LEN-02": {
+        "warn": 30,
+        "fail": 45
+      },
+      "EP-LEN-03": {
+        "warn": 4,
+        "fail": 3
+      },
+      "EP-DLG-01": {
+        "warn": 0.2,
+        "fail": 0.35
+      },
+      "EP-DLG-02": {
+        "warn": 0.15,
+        "fail": 0.3
+      },
+      "EP-DLG-03": {
+        "warn": 0.5,
+        "fail": 0.7
+      },
+      "EP-FLT-01": {
+        "warn": 6,
+        "fail": 10
+      },
+      "EP-ADV-01": {
+        "warn": 12,
+        "fail": 20
+      },
+      "EP-TRN-RATE": {
+        "warn": 1.5,
+        "fail": 3.0
+      },
+      "EP-LOC-01": {
+        "warn": 1,
+        "fail": 3
+      },
+      "EP-REP-01": {
+        "warn": 2,
+        "fail": 4
+      },
+      "EP-LENGTH-01": {
+        "warn": 0.12,
+        "fail": 0.2
+      },
+      "KO-TRN-RATE": {
+        "warn": 2.0,
+        "fail": 4.0
+      },
+      "KO-AIT-COUNT": {
+        "warn": 3,
+        "fail": 6
+      },
+      "KO-PRN-RATE": {
+        "warn": 3.0,
+        "fail": 6.0
+      },
+      "KO-SIM-RATE": {
+        "warn": 1.2,
+        "fail": 2.5
+      },
+      "KO-PARA-LONG": {
+        "warn": 0.08,
+        "fail": 0.18
+      },
+      "KO-PARA-CHARS": {
+        "warn": 180,
+        "fail": 260
+      },
+      "KO-DLG-LOW": {
+        "warn": 0.22,
+        "fail": 0.12
+      },
+      "KO-CONJ-RATE": {
+        "warn": 2.5,
+        "fail": 5.0
+      },
+      "KO-END-02": {
+        "warn": 5,
+        "fail": 9
+      },
+      "KO-NAME-01": {
+        "warn": 1,
+        "fail": 4
+      }
+    },
+    "rubric": [
+      {
+        "dimension": "한국어 어감과 관용 표현",
+        "weight": 0.25,
+        "anchors": {
+          "5": "한국 웹소설 작가가 처음부터 한국어로 쓴 것처럼 자연스럽다.",
+          "3": "간혹 어색한 표현이나 비문이 섞인다.",
+          "1": "외국어 번역투가 곳곳에서 드러난다."
+        }
+      },
+      {
+        "dimension": "번역투 문장의 부재",
+        "weight": 0.2,
+        "anchors": {
+          "5": "주어 생략·조사·어순이 자연스럽고 ‘그/그녀’가 거의 없다.",
+          "3": "번역투 문장이 몇 개 보인다.",
+          "1": "영어식 어순·대명사·피동·관형절 남용이 전반에 퍼져 있다."
+        }
+      },
+      {
+        "dimension": "AI 상투구·과잉 수식의 부재",
+        "weight": 0.15,
+        "anchors": {
+          "5": "상투구 없이 구체적인 반응과 행동으로 감정을 보여 준다.",
+          "3": "상투구나 과한 비유가 몇 번 튄다.",
+          "1": "‘알 수 없는 감정’, ‘시간이 멈춘 듯’, 문단마다 비유가 반복된다."
+        }
+      },
+      {
+        "dimension": "화법과 존대의 자연스러움",
+        "weight": 0.2,
+        "anchors": {
+          "5": "말높이와 호칭이 관계와 장면에 맞게 살아 있고 인물마다 말투가 다르다.",
+          "3": "화법은 맞지만 굳어 있다.",
+          "1": "높임이 기계적이거나 관계와 어긋나고 모두 같은 말투다."
+        }
+      },
+      {
+        "dimension": "모바일 가독성",
+        "weight": 0.2,
+        "anchors": {
+          "5": "짧고 힘 있는 문장, 한두 문장 문단, 한 줄 강조 문단.",
+          "3": "일부 문단이 길거나 문장이 얽힌다.",
+          "1": "빽빽한 문단과 긴 문장이 이어진다."
+        }
+      }
+    ]
+  },
+  "calibration": {
+    "status": "uncalibrated",
+    "notes": "시작값(ADR-0056). 대조 세트와 검토자 판정으로 보정한다 (ADR-0029)."
+  }
+}

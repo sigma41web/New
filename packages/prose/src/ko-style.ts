@@ -39,6 +39,11 @@ export interface KoStyleSource {
   readonly allowlist?: readonly string[] | undefined;
   /** Studio exemplar passages the manuscript must never reuse verbatim. */
   readonly exemplarTexts?: readonly string[] | undefined;
+  /**
+   * Registered character names (display names, short forms, aliases): KO-NAME-01 flags a word one syllable
+   * away from one of them. Places and items are left out — their names share syllables with common nouns.
+   */
+  readonly personNames?: readonly string[] | undefined;
 }
 
 export type KoStyleIssueKind =
@@ -50,6 +55,7 @@ export type KoStyleIssueKind =
   | 'format_drift'
   | 'unapproved_untranslated_term'
   | 'weak_ending'
+  | 'naming_registry_violation'
   | 'other';
 
 export interface KoStyleFinding {
@@ -78,6 +84,8 @@ export interface KoStyleMetrics {
   readonly translation_weighted_per_1k: number;
   readonly cliche_hits: number;
   readonly conjunction_per_1k: number;
+  /** Share of characters inside ‘…’ (속마음/inner monologue), reported apart from dialogue (ADR-0062). */
+  readonly monologue_ratio?: number | undefined;
 }
 
 export interface KoStyleReport {
@@ -129,6 +137,12 @@ function isDialogue(p: string): boolean {
 function quotedChars(p: string): number {
   let n = 0;
   for (const m of p.matchAll(/“[^”]*”|"[^"]*"/gu)) n += codePointLength(m[0]);
+  return n;
+}
+
+function monologueChars(p: string): number {
+  let n = 0;
+  for (const m of p.matchAll(/‘[^’]*’/gu)) n += codePointLength(m[0]);
   return n;
 }
 
@@ -211,13 +225,15 @@ export function lintKoreanWebnovel(input: string, src: KoStyleSource = {}): KoSt
     if (!re) continue;
     for (const hit of text.matchAll(re)) {
       const stale = f.category === 'stale_cliche';
+      // ADR-0062: a misspelling is an orthography error readers comment on, not format drift.
+      const spelling = f.category === 'spelling';
       if (stale) cliches++;
       const start = cp(text, hit.index);
       findings.push({
         rule_id: f.id,
-        kind: stale ? 'literary_drift' : 'format_drift',
-        severity: stale ? 'minor' : severityOf(f.severity),
-        message: `${stale ? 'AI 상투구' : '형식 위반'}: “${hit[0].trim()}” — ${f.note ?? '고친다.'}`,
+        kind: stale ? 'literary_drift' : spelling ? 'other' : 'format_drift',
+        severity: stale || spelling ? 'minor' : severityOf(f.severity),
+        message: `${stale ? 'AI 상투구' : spelling ? '맞춤법' : '형식 위반'}: “${hit[0].trim()}” — ${f.note ?? '고친다.'}`,
         paragraph_ids: [paraAt(hit.index)],
         start,
         end: start + codePointLength(hit[0]),
@@ -339,6 +355,77 @@ export function lintKoreanWebnovel(input: string, src: KoStyleSource = {}): KoSt
       end: last.end,
     });
 
+  // --- ADR-0062 rules run only when the language layer carries their threshold (lang/ko@4 onward), so a
+  // project pinned to an earlier layer lints exactly as before.
+  // KO-END-02: a run of narration sentences that all close on the same two syllables (했다. 했다. 했다.).
+  const endTh = src.thresholds?.['KO-END-02'];
+  if (endTh) {
+    let run: { ending: string; ids: string[]; n: number } | undefined;
+    let worst: { ending: string; ids: string[]; n: number } | undefined;
+    for (const p of paragraphs) {
+      if (isDialogue(p.text)) {
+        run = undefined;
+        continue;
+      }
+      for (const m of p.text.matchAll(SENTENCE_END)) {
+        const before = p.text.slice(0, m.index).replace(/[^가-힣]/gu, '');
+        const ending = Array.from(before).slice(-2).join('');
+        if (Array.from(ending).length < 2) continue;
+        run =
+          run?.ending === ending
+            ? { ending, ids: [...new Set([...run.ids, p.id])], n: run.n + 1 }
+            : { ending, ids: [p.id], n: 1 };
+        if (!worst || run.n > worst.n) worst = run;
+      }
+    }
+    if (worst && worst.n >= endTh.warn)
+      findings.push({
+        rule_id: 'KO-END-02',
+        kind: 'other',
+        severity: worst.n >= endTh.fail ? 'major' : 'minor',
+        message: `서술 문장 ${String(worst.n)}개가 연달아 ‘~${worst.ending}.’로 끝난다 (기준 ${String(endTh.warn)}개). 어미와 문장 길이를 바꿔 호흡을 살린다.`,
+        paragraph_ids: worst.ids.slice(0, 6),
+        value: worst.n,
+        threshold: worst.n >= endTh.fail ? endTh.fail : endTh.warn,
+      });
+  }
+  // KO-NAME-01: a word one syllable away from a registered name (서지얀 for 서지안) — a misspelled name.
+  const nameTh = src.thresholds?.['KO-NAME-01'];
+  if (nameTh) {
+    const names = [...new Set((src.personNames ?? []).filter((n) => /^[가-힣]{3,}$/u.test(n)))];
+    const known = new Set([...(src.allowlist ?? []), ...(src.personNames ?? [])]);
+    const near = new Map<string, { name: string; at: number }>();
+    for (const m of text.matchAll(/[가-힣]{3,}/gu)) {
+      const word = m[0];
+      if (known.has(word) || names.some((n) => word.startsWith(n))) continue;
+      for (const n of names) {
+        const len = Array.from(n).length;
+        const head = Array.from(word).slice(0, len);
+        if (head.length !== len) continue;
+        const diff = head.filter((ch, i) => ch !== Array.from(n)[i]).length;
+        // One differing syllable, never the first (서지얀/서지안, not 김지안/서지안 which may be kin).
+        if (diff === 1 && head[0] === Array.from(n)[0] && !near.has(head.join(''))) {
+          near.set(head.join(''), { name: n, at: m.index });
+          break;
+        }
+      }
+    }
+    if (near.size >= nameTh.warn)
+      for (const [word, { name, at }] of near) {
+        const start = cp(text, at);
+        findings.push({
+          rule_id: 'KO-NAME-01',
+          kind: 'naming_registry_violation',
+          severity: near.size >= nameTh.fail ? 'major' : 'minor',
+          message: `등록된 이름과 한 글자 다르다: “${word}” — ‘${name}’의 오기인지 확인한다.`,
+          paragraph_ids: [paraAt(at)],
+          start,
+          end: start + codePointLength(word),
+          quote: word,
+        });
+      }
+  }
+
   // --- verbatim reuse of the studio exemplars (ADR-0025: exemplars are rhythm references, never content).
   const lines = (src.exemplarTexts ?? [])
     .flatMap((t) => toNfcText(t).text.split(/\n+/))
@@ -372,6 +459,9 @@ export function lintKoreanWebnovel(input: string, src: KoStyleSource = {}): KoSt
       translation_weighted_per_1k: translationRate,
       cliche_hits: cliches,
       conjunction_per_1k: per1k(conj),
+      monologue_ratio:
+        Math.round((paragraphs.reduce((a, p) => a + monologueChars(p.text), 0) / chars) * 1000) /
+        1000,
     },
     findings,
   };
